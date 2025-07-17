@@ -140,23 +140,23 @@ def analyze_initiative_with_ai(text):
     prompt = (
         f"Analiza la siguiente iniciativa:\n\n"
         f"{text}\n\n"
-        "Devuelve el análisis como un JSON con esta estructura exacta:\n"
+        "Devuelve el análisis como un JSON válido con esta estructura exacta, sin incluir markdown ni texto adicional fuera del JSON:\n"
         "{\n"
-        "  'areas_innovacion': ['producto', 'proceso'],\n"
-        "  'impacto_sostenibilidad': 70,\n"
-        "  'impacto_viabilidad': 80,\n"
-        "  'impacto_diferenciacion': 75,\n"
-        "  'puntuacion_global': 78,\n"
-        "  'justificacion': 'Texto corto explicando la puntuación',\n"
-        "  'impacto': 8,\n"
-        "  'esfuerzo': 4,\n"
-        "  'viabilidad_tecnica': 8,\n"
-        "  'alineacion_estrategica': 7,\n"
-        "  'tiempo_implementacion': 6,\n"
-        "  'categoria': 'Tecnología',\n"
-        "  'beneficios': ['Beneficio 1', 'Beneficio 2'],\n"
-        "  'riesgos': ['Riesgo 1', 'Riesgo 2'],\n"
-        "  'recomendaciones': ['Recomendación 1', 'Recomendación 2']\n"
+        "  \"areas_innovacion\": [\"producto\", \"proceso\"],\n"
+        "  \"impacto_sostenibilidad\": 70,\n"
+        "  \"impacto_viabilidad\": 80,\n"
+        "  \"impacto_diferenciacion\": 75,\n"
+        "  \"puntuacion_global\": 78,\n"
+        "  \"justificacion\": \"Texto corto explicando la puntuación\",\n"
+        "  \"impacto\": 8,\n"
+        "  \"esfuerzo\": 4,\n"
+        "  \"viabilidad_tecnica\": 8,\n"
+        "  \"alineacion_estrategica\": 7,\n"
+        "  \"tiempo_implementacion\": 6,\n"
+        "  \"categoria\": \"Tecnología\",\n"
+        "  \"beneficios\": [\"Beneficio 1\", \"Beneficio 2\"],\n"
+        "  \"riesgos\": [\"Riesgo 1\", \"Riesgo 2\"],\n"
+        "  \"recomendaciones\": [\"Recomendación 1\", \"Recomendación 2\"]\n"
         "}"
     )
 
@@ -164,35 +164,91 @@ def analyze_initiative_with_ai(text):
         response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "Eres un experto en innovación empresarial."},
+                {"role": "system", "content": "Eres un experto en innovación empresarial. Responde únicamente con un JSON válido, sin markdown ni texto adicional."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.5,
             max_tokens=700
         )
         content = response.choices[0].message.content.strip()
-        # Remove markdown code fences if present
-        content = re.sub(r'^```json\n|```$', '', content, flags=re.MULTILINE)
-        analysis = json.loads(content)  # Use json.loads for safer parsing
+        
+        # Remove markdown code fences and any leading/trailing whitespace
+        content = re.sub(r'^```json\n|```$|\n\s*\n', '', content, flags=re.MULTILINE).strip()
+        
+        # Debugging: Log the raw response for inspection
+        st.write(f"Respuesta cruda de la API: {content}")
+        
+        # Attempt to parse JSON
+        try:
+            analysis = json.loads(content)
+        except json.JSONDecodeError as parse_err:
+            st.error(f"Error al parsear JSON: {parse_err}")
+            st.write(f"Contenido recibido: {content}")
+            return {
+                "areas_innovacion": [],
+                "impacto_sostenibilidad": 0,
+                "impacto_viabilidad": 0,
+                "impacto_diferenciacion": 0,
+                "puntuacion_global": 0,
+                "justificacion": "Error en el análisis: respuesta no válida",
+                "impacto": 0,
+                "esfuerzo": 0,
+                "viabilidad_tecnica": 0,
+                "alineacion_estrategica": 0,
+                "tiempo_implementacion": 0,
+                "categoria": "Sin categoría",
+                "beneficios": [],
+                "riesgos": [],
+                "recomendaciones": []
+            }
+        
+        # Validate that the response contains all required keys
+        required_keys = [
+            "areas_innovacion", "impacto_sostenibilidad", "impacto_viabilidad",
+            "impacto_diferenciacion", "puntuacion_global", "justificacion",
+            "impacto", "esfuerzo", "viabilidad_tecnica", "alineacion_estrategica",
+            "tiempo_implementacion", "categoria", "beneficios", "riesgos", "recomendaciones"
+        ]
+        if not all(key in analysis for key in required_keys):
+            missing_keys = [key for key in required_keys if key not in analysis]
+            st.error(f"Error: Faltan claves en la respuesta JSON: {missing_keys}")
+            return {
+                "areas_innovacion": [],
+                "impacto_sostenibilidad": 0,
+                "impacto_viabilidad": 0,
+                "impacto_diferenciacion": 0,
+                "puntuacion_global": 0,
+                "justificacion": "Error en el análisis: estructura JSON incompleta",
+                "impacto": 0,
+                "esfuerzo": 0,
+                "viabilidad_tecnica": 0,
+                "alineacion_estrategica": 0,
+                "tiempo_implementacion": 0,
+                "categoria": "Sin categoría",
+                "beneficios": [],
+                "riesgos": [],
+                "recomendaciones": []
+            }
+        
         return analysis
     except Exception as e:
-        st.error(f"Error en análisis AI: {e}")
+        st.error(f"Error en análisis AI: {str(e)}")
         return {
-            'areas_innovacion': [],
-            'impacto_sostenibilidad': 0,
-            'impacto_viabilidad': 0,
-            'impacto_diferenciacion': 0,
-            'puntuacion_global': 0,
-            'justificacion': 'Error en el análisis',
-            'impacto': 0,
-            'esfuerzo': 0,
-            'viabilidad_tecnica': 0,
-            'alineacion_estrategica': 0,
-            'tiempo_implementacion': 0,
-            'categoria': 'Sin categoría',
-            'beneficios': [],
-            'riesgos': [],
-            'recomendaciones': []
+            "areas_innovacion": [],
+            "impacto_sostenibilidad": 0,
+            "impacto_viabilidad": 0,
+            "impacto_diferenciacion": 0,
+            "puntuacion_global": 0,
+            "justificacion": f"Error en el análisis: {str(e)}",
+            "impacto": 0,
+            "esfuerzo": 0,
+            "viabilidad_tecnica": 0,
+            "alineacion_estrategica": 0,
+            "tiempo_implementacion": 0,
+            "categoria": "Sin categoría",
+            "beneficios": [],
+            "riesgos": [],
+            "recomendaciones": []
         }
 
 # Función para procesar todas las iniciativas
@@ -862,7 +918,7 @@ def main():
         st.markdown("""
         Para comenzar:
         1. Ingresa la URL de tu Google Sheets en la barra lateral
-        2. Haz clic en **Cargar/Actualizar Datos**
+        2. Haz clic en **Cargar/Actualizar Datos**F
         3. Una vez cargados los datos, haz clic en **Analizar Iniciativas con IA**
         
         El sistema analizará automáticamente cada iniciativa y proporcionará:
