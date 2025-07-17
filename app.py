@@ -26,6 +26,8 @@ st.set_page_config(
 # Estilos CSS personalizados
 st.markdown("""
 <style>
+
+    .stApp { background-color: #e6f0fa; }
     /* Font and general styling */
     body {
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', sans-serif;
