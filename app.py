@@ -410,9 +410,12 @@ def main():
                 
                 # Top iniciativas
                 st.subheader("🏆 Top Iniciativas por Puntuación")
-                top_initiatives = df.nlargest(5, 'puntuacion_global')[
-                    ['nombre_iniciativa', 'proponente', 'categoria', 'puntuacion_global', 'impacto', 'esfuerzo']
+                df['puntuacion_global'] = pd.to_numeric(df['puntuacion_global'], errors='coerce')  # convierte a número
+                df_sorted = df.dropna(subset=['puntuacion_global'])  # elimina filas donde no se pudo convertir
+                top_initiatives = df_sorted.nlargest(5, 'puntuacion_global')[
+                    ['timestamp', 'nombre', 'iniciativa', 'puntuacion_global']
                 ]
+
                 
                 for idx, row in top_initiatives.iterrows():
                     col1, col2, col3 = st.columns([3, 1, 1])
