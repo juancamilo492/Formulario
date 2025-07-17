@@ -26,48 +26,128 @@ st.set_page_config(
 # Estilos CSS personalizados
 st.markdown("""
 <style>
+    /* Font and general styling */
+    body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', sans-serif;
+        color: #1a1a1a;
+        background-color: #e6f0fa;
+    }
+
+    /* Main header styling */
     .main-header {
-        font-size: 3rem;
-        font-weight: bold;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        font-size: 2.5rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, #000F9F 0%, #40B4E5 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         text-align: center;
         padding: 2rem 0;
+        letter-spacing: -0.02em;
+        margin-bottom: 1rem;
     }
+
+    /* Metric card styling */
     .metric-card {
-        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        background: #ffffff;
         padding: 1.5rem;
-        border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 15, 159, 0.1);
         text-align: center;
         margin: 0.5rem;
+        border: 1px solid #40B4E5;
+        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
     }
+    .metric-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 6px 16px rgba(0, 15, 159, 0.15);
+    }
+
+    /* Initiative card styling */
     .initiative-card {
-        background: white;
+        background: #ffffff;
         padding: 1.5rem;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0, 15, 159, 0.1);
         margin-bottom: 1rem;
-        border-left: 4px solid #667eea;
+        border-left: 5px solid #DB9500;
+        transition: transform 0.2s ease-in-out;
     }
+    .initiative-card:hover {
+        transform: translateY(-2px);
+    }
+
+    /* Status badge styling */
     .status-badge {
-        padding: 0.25rem 0.75rem;
+        padding: 0.35rem 1rem;
         border-radius: 20px;
         font-size: 0.875rem;
-        font-weight: bold;
+        font-weight: 600;
+        display: inline-block;
+        transition: transform 0.2s ease-in-out;
+    }
+    .status-badge:hover {
+        transform: scale(1.05);
     }
     .high-impact {
-        background-color: #10b981;
-        color: white;
+        background-color: #40B4E5;
+        color: #ffffff;
     }
     .medium-impact {
-        background-color: #f59e0b;
-        color: white;
+        background-color: #DB9500;
+        color: #ffffff;
     }
     .low-impact {
-        background-color: #ef4444;
-        color: white;
+        background-color: #ff4d4f;
+        color: #ffffff;
+    }
+
+    /* Sidebar styling */
+    .css-1d391kg {
+        background-color: #000F9F;
+        color: #ffffff;
+    }
+    .css-1d391kg .stButton>button {
+        background-color: #DB9500;
+        color: #ffffff;
+        border-radius: 8px;
+        font-weight: 500;
+        padding: 0.5rem 1rem;
+        transition: background-color 0.2s ease-in-out;
+    }
+    .css-1d391kg .stButton>button:hover {
+        background-color: #b87a00;
+    }
+
+    /* General button styling */
+    .stButton>button {
+        background-color: #40B4E5;
+        color: #ffffff;
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        font-weight: 500;
+        transition: background-color 0.2s ease-in-out;
+    }
+    .stButton>button:hover {
+        background-color: #2a8bb8;
+    }
+
+    /* Tab styling */
+    .stTabs [data-baseweb="tab"] {
+        background-color: #ffffff;
+        border-radius: 8px 8px 0 0;
+        color: #000F9F;
+        font-weight: 500;
+    }
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+        background-color: #DB9500;
+        color: #ffffff;
+    }
+
+    /* Divider styling */
+    .stDivider {
+        background-color: #40B4E5;
+        height: 2px;
+        margin: 1rem 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -110,37 +190,38 @@ def load_data_from_sheets(sheet_url):
         worksheet = sheet.get_worksheet(0)  # Primera hoja
         data = worksheet.get_all_records()
         
-        if data:
-            df = pd.DataFrame(data)
-            # Renombrar columnas para facilitar el trabajo
-            column_mapping = {
-                'Marca temporal': 'timestamp',
-                'Nombre de la iniciativa': 'nombre_iniciativa',
-                'Cuéntanos brevemente, ¿de qué trata tu iniciativa / idea innovadora?': 'descripcion',
-                'Nombre de quién propone': 'proponente',
-                'Número de celular al que te podamos contactar ': 'telefono',
-                'Correo al que te podamos contactar ': 'correo',
-                'Selecciona a qué público de interés perteneces ': 'publico_interes',
-                'Selecciona el área o proceso al cual perteneces ': 'area_proceso',
-                '¿Cuál el nombre de tu organización?': 'organizacion'
-            }
-            df.rename(columns=column_mapping, inplace=True)
-            
-            # Limpiar filas vacías o incompletas
-            df = df.dropna(how='all')  # Eliminar filas completamente vacías
-            df = df[df['nombre_iniciativa'].str.strip() != '']  # Eliminar filas con nombre vacío
-            
-            # Convertir timestamp a datetime
-            df['timestamp'] = pd.to_datetime(df['timestamp'], dayfirst=True, errors='coerce')
-            
-            # Generar un identificador único basado en nombre_iniciativa, timestamp y descripción
-            df['initiative_id'] = df.apply(
-                lambda row: hashlib.md5(f"{row['nombre_iniciativa']}_{row['timestamp']}_{row['descripcion']}".encode()).hexdigest(),
-                axis=1
-            )
-            
-            return df
-        return None
+        if not data:
+            return None
+        
+        df = pd.DataFrame(data)
+        # Renombrar columnas para facilitar el trabajo
+        column_mapping = {
+            'Marca temporal': 'timestamp',
+            'Nombre de la iniciativa': 'nombre_iniciativa',
+            'Cuéntanos brevemente, ¿de qué trata tu iniciativa / idea innovadora?': 'descripcion',
+            'Nombre de quién propone': 'proponente',
+            'Número de celular al que te podamos contactar ': 'telefono',
+            'Correo al que te podamos contactar ': 'correo',
+            'Selecciona a qué público de interés perteneces ': 'publico_interes',
+            'Selecciona el área o proceso al cual perteneces ': 'area_proceso',
+            '¿Cuál el nombre de tu organización?': 'organizacion'
+        }
+        df.rename(columns=column_mapping, inplace=True)
+        
+        # Limpiar filas vacías o incompletas
+        df = df.dropna(how='all')  # Eliminar filas completamente vacías
+        df = df[df['nombre_iniciativa'].str.strip() != '']  # Eliminar filas con nombre vacío
+        
+        # Convertir timestamp a datetime
+        df['timestamp'] = pd.to_datetime(df['timestamp'], dayfirst=True, errors='coerce')
+        
+        # Generar un identificador único basado en nombre_iniciativa, timestamp y descripción
+        df['initiative_id'] = df.apply(
+            lambda row: hashlib.md5(f"{row['nombre_iniciativa']}_{row['timestamp']}_{row['descripcion']}".encode()).hexdigest(),
+            axis=1
+        )
+        
+        return df
     except Exception as e:
         st.error(f"Error al cargar datos: {str(e)}")
         return None
@@ -171,15 +252,16 @@ def load_analyzed_data(sheet_url):
             worksheet.update('A1', [headers])
         
         data = worksheet.get_all_records()
-        if data:
-            df = pd.DataFrame(data)
-            # Convertir listas almacenadas como strings a listas reales
-            for col in ['areas_innovacion', 'beneficios', 'riesgos', 'recomendaciones']:
-                df[col] = df[col].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) and x else [])
-            # Convertir timestamp a datetime
-            df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
-            return df
-        return None
+        if not data:
+            return None
+        
+        df = pd.DataFrame(data)
+        # Convertir listas almacenadas como strings a listas reales
+        for col in ['areas_innovacion', 'beneficios', 'riesgos', 'recomendaciones']:
+            df[col] = df[col].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) and x else [])
+        # Convertir timestamp a datetime
+        df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+        return df
     except Exception as e:
         st.error(f"Error al cargar datos analizados: {str(e)}")
         return None
@@ -543,7 +625,7 @@ def main():
                     df, 
                     names='categoria', 
                     title='Distribución por Categorías',
-                    color_discrete_sequence=px.colors.qualitative.Set3
+                    color_discrete_sequence=['#DB9500', '#40B4E5', '#000F9F'] + px.colors.qualitative.Set3[3:]
                 )
                 fig_cat.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig_cat, use_container_width=True)
@@ -558,7 +640,7 @@ def main():
                     title='Iniciativas por Área',
                     labels={'x': 'Cantidad', 'y': 'Área'},
                     color=area_counts.values,
-                    color_continuous_scale='viridis'
+                    color_continuous_scale=['#40B4E5', '#000F9F']
                 )
                 st.plotly_chart(fig_area, use_container_width=True)
             
@@ -574,7 +656,8 @@ def main():
                 y='cantidad',
                 title='Evolución de Iniciativas Propuestas',
                 markers=True,
-                line_shape='spline'
+                line_shape='spline',
+                color_discrete_sequence=['#DB9500']
             )
             fig_timeline.update_layout(
                 xaxis_title="Fecha",
@@ -695,10 +778,10 @@ def main():
                 title='Matriz de Priorización: Esfuerzo vs Impacto',
                 labels={'esfuerzo': 'Esfuerzo (1-10)', 'impacto': 'Impacto (1-10)'},
                 color_discrete_map={
-                    "Quick Wins": "#10b981",
-                    "Proyectos Estratégicos": "#3b82f6",
-                    "Fill Ins": "#f59e0b",
-                    "Difíciles de Justificar": "#ef4444"
+                    "Quick Wins": "#40B4E5",
+                    "Proyectos Estratégicos": "#000F9F",
+                    "Fill Ins": "#DB9500",
+                    "Difíciles de Justificar": "#ff4d4f"
                 }
             )
             
@@ -709,32 +792,32 @@ def main():
                 x=2, y=8.5,
                 text="Quick Wins<br>Alto Impacto<br>Bajo Esfuerzo",
                 showarrow=False,
-                font=dict(size=12, color="green"),
-                bgcolor="rgba(16, 185, 129, 0.1)",
+                font=dict(size=12, color="#40B4E5"),
+                bgcolor="rgba(64, 180, 229, 0.1)",
                 borderpad=4
             )
             fig_matrix.add_annotation(
                 x=7, y=8.5,
                 text="Proyectos<br>Estratégicos<br>Alto Impacto<br>Alto Esfuerzo",
                 showarrow=False,
-                font=dict(size=12, color="blue"),
-                bgcolor="rgba(59, 130, 246, 0.1)",
+                font=dict(size=12, color="#000F9F"),
+                bgcolor="rgba(0, 15, 159, 0.1)",
                 borderpad=4
             )
             fig_matrix.add_annotation(
                 x=2, y=3.5,
                 text="Fill Ins<br>Bajo Impacto<br>Bajo Esfuerzo",
                 showarrow=False,
-                font=dict(size=12, color="orange"),
-                bgcolor="rgba(245, 158, 11, 0.1)",
+                font=dict(size=12, color="#DB9500"),
+                bgcolor="rgba(219, 149, 0, 0.1)",
                 borderpad=4
             )
             fig_matrix.add_annotation(
                 x=7, y=3.5,
                 text="Difíciles de<br>Justificar<br>Bajo Impacto<br>Alto Esfuerzo",
                 showarrow=False,
-                font=dict(size=12, color="red"),
-                bgcolor="rgba(239, 68, 68, 0.1)",
+                font=dict(size=12, color="#ff4d4f"),
+                bgcolor="rgba(255, 77, 79, 0.1)",
                 borderpad=4
             )
             
@@ -912,7 +995,8 @@ def main():
                         r=values,
                         theta=categories,
                         fill='toself',
-                        name='Evaluación'
+                        name='Evaluación',
+                        line=dict(color='#DB9500')
                     ))
                     
                     fig_radar.update_layout(
