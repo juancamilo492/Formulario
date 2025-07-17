@@ -1,11 +1,9 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import random
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import openai
@@ -14,644 +12,561 @@ import time
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Innovation Hub - Análisis de Iniciativas",
-    page_icon="🚀",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="Análisis de Iniciativas de Innovación",
+    page_icon="💡",
+    layout="wide"
 )
 
-# Estilos CSS mejorados
+# Estilos CSS personalizados
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-    
-    * {
-        font-family: 'Inter', sans-serif;
-    }
-    
-    .main {
-        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-    }
-    
-    .stApp {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-    
     .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 25px;
-        border-radius: 20px;
-        text-align: center;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        color: white;
-        transition: transform 0.3s ease;
-    }
-    
-    .metric-card:hover {
-        transform: translateY(-5px);
-    }
-    
-    .initiative-card {
-        background: white;
-        padding: 25px;
-        border-radius: 15px;
-        box-shadow: 0 5px 20px rgba(0,0,0,0.1);
-        margin-bottom: 20px;
-        border-left: 5px solid #667eea;
-        transition: all 0.3s ease;
-    }
-    
-    .initiative-card:hover {
-        box-shadow: 0 10px 30px rgba(0,0,0,0.15);
-        transform: translateX(5px);
-    }
-    
-    .header-gradient {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 2rem;
-        border-radius: 20px;
-        color: white;
-        text-align: center;
-        margin-bottom: 2rem;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-    }
-    
-    .stButton > button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        padding: 0.75rem 2rem;
-        border-radius: 10px;
-        font-weight: 600;
-        transition: all 0.3s ease;
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
-    }
-    
-    .css-1d391kg {
-        background: white;
-        border-radius: 15px;
-        padding: 1rem;
-    }
-    
-    .stTabs [data-baseweb="tab-list"] {
-        background: white;
-        border-radius: 15px;
-        padding: 10px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        padding: 0 25px;
-        background: transparent;
-        border-radius: 10px;
-        color: #667eea;
-        font-weight: 600;
-    }
-    
-    .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-    }
-    
-    div[data-testid="metric-container"] {
-        background: white;
-        border-radius: 15px;
+        background-color: #f0f2f6;
         padding: 20px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        border: 2px solid #667eea;
+        border-radius: 10px;
+        text-align: center;
     }
-    
-    div[data-testid="metric-container"] > div {
-        color: #667eea;
-    }
-    
-    .quick-win-badge {
-        background: #10b981;
-        color: white;
-        padding: 5px 15px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 600;
-        display: inline-block;
-        margin: 5px;
-    }
-    
-    .strategic-badge {
-        background: #f59e0b;
-        color: white;
-        padding: 5px 15px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 600;
-        display: inline-block;
-        margin: 5px;
-    }
-    
-    .high-risk-badge {
-        background: #ef4444;
-        color: white;
-        padding: 5px 15px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 600;
-        display: inline-block;
-        margin: 5px;
+    .initiative-card {
+        background-color: #ffffff;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Header con gradiente
-st.markdown("""
-<div class="header-gradient">
-    <h1 style="margin: 0; font-size: 3rem;">🚀 Innovation Hub</h1>
-    <p style="margin: 0; font-size: 1.2rem; opacity: 0.9;">Sistema Inteligente de Análisis de Iniciativas</p>
-</div>
-""", unsafe_allow_html=True)
+# Título principal
+st.title("🚀 Análisis de Iniciativas de Innovación")
+st.markdown("---")
 
-# Sidebar mejorada
+# Sidebar para configuración
 with st.sidebar:
-    st.markdown("""
-    <div style="background: white; padding: 20px; border-radius: 15px; margin-bottom: 20px;">
-        <h2 style="color: #667eea; margin: 0;">⚙️ Panel de Control</h2>
-    </div>
-    """, unsafe_allow_html=True)
+    st.header("⚙️ Configuración")
     
     # API Keys
-    with st.expander("🔑 Configuración de APIs", expanded=False):
-        openai_api_key = st.text_input("OpenAI API Key", type="password", help="Ingresa tu clave API de OpenAI para análisis avanzado")
+    openai_api_key = st.text_input("OpenAI API Key", type="password")
     
     # Google Sheets Configuration
-    with st.expander("📊 Google Sheets", expanded=False):
-        spreadsheet_id = st.text_input("ID de la hoja de cálculo", help="Encuentra el ID en la URL de tu Google Sheet")
-        sheet_name = st.text_input("Nombre de la hoja", value="Respuestas")
+    st.subheader("📊 Configuración Google Sheets")
+    spreadsheet_id = st.text_input("ID de la hoja de cálculo")
+    sheet_name = st.text_input("Nombre de la hoja", value="Respuestas")
     
-    # Opciones de visualización
-    st.markdown("### 🎨 Opciones de Visualización")
+    # Credenciales de Google (en producción, usar secrets)
     use_demo_data = st.checkbox("Usar datos de demostración", value=True)
-    show_animations = st.checkbox("Mostrar animaciones", value=True)
-    theme_color = st.selectbox("Tema de color", ["Púrpura", "Azul", "Verde", "Naranja"])
-    
-    # Filtros rápidos
-    st.markdown("### 🔍 Filtros Rápidos")
-    quick_filter = st.radio("Mostrar:", ["Todas", "Quick Wins", "Estratégicas", "Alto Riesgo"])
     
     # Botón de actualización
-    if st.button("🔄 Actualizar datos", use_container_width=True):
+    if st.button("🔄 Actualizar datos"):
         st.rerun()
 
 # Funciones auxiliares
-def generate_extended_demo_data():
-    """Genera 50+ datos de demostración más realistas"""
+def get_google_sheets_data(spreadsheet_id, sheet_name, credentials):
+    """Obtiene datos de Google Sheets"""
+    try:
+        service = build('sheets', 'v4', credentials=credentials)
+        sheet = service.spreadsheets()
+        result = sheet.values().get(
+            spreadsheetId=spreadsheet_id,
+            range=f"{sheet_name}!A:Z"
+        ).execute()
+        values = result.get('values', [])
+        
+        if not values:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(values[1:], columns=values[0])
+        return df
+    except Exception as e:
+        st.error(f"Error al conectar con Google Sheets: {e}")
+        return pd.DataFrame()
+
+def generate_demo_data():
+    """Genera datos de demostración"""
+    data = {
+        'Timestamp': [
+            '2025-01-15 10:30:00', '2025-01-15 11:45:00', '2025-01-15 14:20:00',
+            '2025-01-16 09:15:00', '2025-01-16 10:00:00', '2025-01-16 15:30:00',
+            '2025-01-17 08:45:00', '2025-01-17 11:20:00', '2025-01-17 13:00:00',
+            '2025-01-18 10:10:00'
+        ],
+        'Nombre': [
+            'Ana García', 'Carlos López', 'María Rodríguez', 'Juan Pérez',
+            'Laura Martínez', 'Pedro Sánchez', 'Sofia Hernández', 'Diego Torres',
+            'Carmen Ruiz', 'Andrés Morales'
+        ],
+        'Departamento': [
+            'Ventas', 'IT', 'Marketing', 'Operaciones', 'RRHH',
+            'IT', 'Finanzas', 'Marketing', 'Ventas', 'IT'
+        ],
+        'Título de la iniciativa': [
+            'CRM inteligente con IA para predicción de ventas',
+            'Automatización de procesos de testing con ML',
+            'Campaña de marketing personalizada con análisis predictivo',
+            'Optimización de rutas de entrega con algoritmos genéticos',
+            'Plataforma de bienestar empleados con gamificación',
+            'Chatbot interno para soporte técnico',
+            'Dashboard financiero en tiempo real',
+            'Sistema de recomendación de contenido para clientes',
+            'App móvil para gestión de clientes en campo',
+            'Migración a arquitectura de microservicios'
+        ],
+        'Descripción': [
+            'Implementar un CRM que use IA para predecir qué clientes tienen mayor probabilidad de compra',
+            'Crear suite de testing automatizado que aprenda de errores previos para mejorar cobertura',
+            'Desarrollar sistema que personalice campañas según comportamiento histórico del cliente',
+            'Sistema que calcule rutas óptimas considerando tráfico, clima y prioridades de entrega',
+            'App que incentive hábitos saludables mediante puntos y recompensas',
+            'Bot inteligente que resuelva consultas técnicas frecuentes del personal',
+            'Visualización en tiempo real de KPIs financieros con alertas automáticas',
+            'Motor de recomendaciones basado en historial y preferencias del cliente',
+            'Aplicación móvil offline-first para gestión de visitas comerciales',
+            'Modernizar arquitectura monolítica actual a microservicios escalables'
+        ],
+        'Beneficios esperados': [
+            'Aumento del 30% en conversión de ventas',
+            'Reducción del 50% en tiempo de testing',
+            'Incremento del 25% en engagement de clientes',
+            'Ahorro del 20% en costos de combustible',
+            'Reducción del 15% en ausentismo laboral',
+            'Disminución del 40% en tickets de soporte',
+            'Detección temprana de desviaciones presupuestarias',
+            'Aumento del 35% en ventas cruzadas',
+            'Mejora del 30% en productividad de vendedores',
+            'Reducción del 60% en tiempo de despliegue'
+        ],
+        'Recursos necesarios': [
+            'Licencias de IA, 2 desarrolladores, 3 meses',
+            '1 ingeniero QA senior, herramientas de testing, 2 meses',
+            'Plataforma de marketing automation, 1 analista, 2 meses',
+            'Servicio de mapas, 2 desarrolladores, 4 meses',
+            'Diseñador UX, 2 desarrolladores, partner de wellness, 3 meses',
+            'Plataforma de chatbot, 1 desarrollador, 1 mes',
+            'Licencias de BI, 1 analista, 2 meses',
+            'Infraestructura ML, 2 data scientists, 4 meses',
+            '2 desarrolladores móviles, diseñador, 3 meses',
+            'Equipo de 5 desarrolladores, consultor de arquitectura, 6 meses'
+        ],
+        'Tiempo estimado': [
+            '3 meses', '2 meses', '2 meses', '4 meses', '3 meses',
+            '1 mes', '2 meses', '4 meses', '3 meses', '6 meses'
+        ],
+        'Presupuesto estimado': [
+            '$25,000', '$15,000', '$20,000', '$35,000', '$30,000',
+            '$8,000', '$12,000', '$40,000', '$25,000', '$80,000'
+        ]
+    }
     
-    # Listas expandidas para mayor variedad
-    nombres = [
-        'Ana García', 'Carlos López', 'María Rodríguez', 'Juan Pérez', 'Laura Martínez',
-        'Pedro Sánchez', 'Sofia Hernández', 'Diego Torres', 'Carmen Ruiz', 'Andrés Morales',
-        'Patricia Jiménez', 'Roberto Silva', 'Elena Vargas', 'Miguel Castro', 'Isabel Ramos',
-        'Fernando Ortiz', 'Lucía Mendoza', 'Alejandro Reyes', 'Natalia Guerrero', 'Ricardo Flores',
-        'Daniela Aguilar', 'Jorge Medina', 'Valeria Cruz', 'Sebastián Rojas', 'Camila Herrera',
-        'Martín Díaz', 'Adriana Salazar', 'Emilio Vega', 'Paula Navarro', 'Gabriel Campos',
-        'Mónica Paredes', 'Héctor Luna', 'Claudia Ríos', 'Raúl Peña', 'Andrea Sandoval',
-        'Luis Cervantes', 'Beatriz Maldonado', 'Oscar Delgado', 'Mariana Espinoza', 'Iván Zamora',
-        'Silvia Cortés', 'Arturo Méndez', 'Rosa Guzmán', 'Víctor Rosales', 'Teresa Pacheco',
-        'Manuel Ibarra', 'Alicia Núñez', 'Rodrigo Serrano', 'Verónica Mora', 'Francisco Valdez',
-        'Diana Ramírez', 'Gustavo León'
-    ]
-    
-    departamentos = ['IT', 'Ventas', 'Marketing', 'RRHH', 'Finanzas', 'Operaciones', 'Innovación', 
-                    'Calidad', 'Legal', 'Compras', 'Logística', 'Servicio al Cliente']
-    
-    # Generar fechas distribuidas en los últimos 30 días
-    base_date = datetime.now() - timedelta(days=30)
-    timestamps = []
-    for i in range(52):
-        random_days = random.uniform(0, 30)
-        random_hours = random.uniform(8, 18)
-        timestamp = base_date + timedelta(days=random_days, hours=random_hours)
-        timestamps.append(timestamp.strftime('%Y-%m-%d %H:%M:%S'))
-    
-    iniciativas = [
-        {
-            'titulo': 'CRM inteligente con IA para predicción de ventas',
-            'descripcion': 'Implementar un CRM que use IA para predecir qué clientes tienen mayor probabilidad de compra',
-            'beneficios': 'Aumento del 30% en conversión de ventas',
-            'recursos': 'Licencias de IA, 2 desarrolladores, 3 meses',
-            'tiempo': '3 meses',
-            'presupuesto': '$35,000'
-        },
-        {
-            'titulo': 'Sistema de voz del cliente con análisis semántico',
-            'descripcion': 'Analizar feedback de clientes para insights accionables',
-            'beneficios': 'Mejora del 25% en satisfacción del cliente',
-            'recursos': 'Herramientas de text mining, analista CX',
-            'tiempo': '2 meses',
-            'presupuesto': '$22,000'
-        },
-        {
-            'titulo': 'Plataforma de innovación social corporativa',
-            'descripcion': 'Proyectos de impacto social liderados por empleados',
-            'beneficios': 'Mejora del 50% en engagement y propósito',
-            'recursos': 'Coordinador de RSE, presupuesto para proyectos',
-            'tiempo': '4 meses',
-            'presupuesto': '$30,000'
-        },
-        {
-            'titulo': 'Sistema de gestión de talento con IA',
-            'descripcion': 'Identificar y desarrollar alto potencial automáticamente',
-            'beneficios': 'Retención del 90% de talento clave',
-            'recursos': 'Plataforma de talent analytics, consultor RRHH',
-            'tiempo': '3 meses',
-            'presupuesto': '$45,000'
-        },
-        {
-            'titulo': 'Hub de innovación abierta',
-            'descripcion': 'Espacio físico para colaboración con startups y partners',
-            'beneficios': 'Aceleración 3x en desarrollo de innovaciones',
-            'recursos': 'Espacio, mobiliario, coordinador de innovación',
-            'tiempo': '5 meses',
-            'presupuesto': '$75,000'
+    return pd.DataFrame(data)
+
+def analyze_initiative_with_ai(initiative, openai_api_key):
+    """Analiza una iniciativa usando OpenAI"""
+    if not openai_api_key:
+        # Análisis simple sin IA
+        return {
+            "viabilidad": np.random.randint(60, 95),
+            "impacto": np.random.randint(1, 6),
+            "esfuerzo": np.random.randint(1, 6),
+            "categoria": np.random.choice(["Tecnología", "Procesos", "Cultura", "Producto"]),
+            "riesgos": ["Falta de recursos", "Resistencia al cambio"],
+            "recomendaciones": ["Iniciar con piloto", "Formar equipo multidisciplinario"]
         }
-    ]
     
-    # Generar dataset completo
-    data_rows = []
-    for i in range(52):
-        row = {
-            'Timestamp': timestamps[i],
-            'Nombre': nombres[i % len(nombres)],
-            'Departamento': random.choice(departamentos),
-            'Título de la iniciativa': iniciativas[i % len(iniciativas)]['titulo'],
-            'Descripción': iniciativas[i % len(iniciativas)]['descripcion'],
-            'Beneficios esperados': iniciativas[i % len(iniciativas)]['beneficios'],
-            'Recursos necesarios': iniciativas[i % len(iniciativas)]['recursos'],
-            'Tiempo estimado': iniciativas[i % len(iniciativas)]['tiempo'],
-            'Presupuesto estimado': iniciativas[i % len(iniciativas)]['presupuesto']
-        }
-        data_rows.append(row)
+    try:
+        openai.api_key = openai_api_key
+        
+        prompt = f"""
+        Analiza la siguiente iniciativa de innovación y proporciona una evaluación en formato JSON:
+        
+        Título: {initiative['Título de la iniciativa']}
+        Descripción: {initiative['Descripción']}
+        Beneficios: {initiative['Beneficios esperados']}
+        Recursos: {initiative['Recursos necesarios']}
+        Tiempo: {initiative['Tiempo estimado']}
+        Presupuesto: {initiative['Presupuesto estimado']}
+        
+        Responde con un JSON que contenga:
+        - viabilidad: puntuación de 0-100
+        - impacto: del 1-5 (5 siendo el mayor impacto)
+        - esfuerzo: del 1-5 (5 siendo el mayor esfuerzo)
+        - categoria: clasificación principal (Tecnología, Procesos, Cultura, Producto)
+        - riesgos: lista de 2-3 riesgos principales
+        - recomendaciones: lista de 2-3 recomendaciones
+        """
+        
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=500
+        )
+        
+        return json.loads(response.choices[0].message.content)
     
-    return pd.DataFrame(data_rows)
-            'presupuesto': '$25,000'
-        },
-        {
-            'titulo': 'Automatización de procesos de testing con ML',
-            'descripcion': 'Crear suite de testing automatizado que aprenda de errores previos para mejorar cobertura',
-            'beneficios': 'Reducción del 50% en tiempo de testing',
-            'recursos': '1 ingeniero QA senior, herramientas de testing, 2 meses',
-            'tiempo': '2 meses',
-            'presupuesto': '$15,000'
-        },
-        {
-            'titulo': 'Plataforma de capacitación con realidad virtual',
-            'descripcion': 'Sistema VR para entrenamientos inmersivos que reduzcan curva de aprendizaje',
-            'beneficios': 'Mejora del 40% en retención de conocimiento',
-            'recursos': 'Equipos VR, desarrollador Unity, contenido 3D',
-            'tiempo': '4 meses',
-            'presupuesto': '$45,000'
-        },
-        {
-            'titulo': 'Chatbot multicanal con procesamiento de lenguaje natural',
-            'descripcion': 'Bot inteligente que atienda consultas en web, WhatsApp y redes sociales',
-            'beneficios': 'Reducción del 60% en tiempo de respuesta',
-            'recursos': 'Plataforma NLP, integrador, diseñador conversacional',
-            'tiempo': '2 meses',
-            'presupuesto': '$20,000'
-        },
-        {
-            'titulo': 'Sistema blockchain para trazabilidad de productos',
-            'descripcion': 'Implementar blockchain para garantizar autenticidad y trazabilidad completa',
-            'beneficios': 'Eliminación del 95% de productos falsificados',
-            'recursos': 'Arquitecto blockchain, 3 desarrolladores, infraestructura',
-            'tiempo': '6 meses',
-            'presupuesto': '$75,000'
-        },
-        {
-            'titulo': 'App móvil de productividad con gamificación',
-            'descripcion': 'Aplicación que convierta tareas en juegos para aumentar engagement',
-            'beneficios': 'Incremento del 35% en productividad individual',
-            'recursos': '2 desarrolladores móviles, diseñador UX/UI',
-            'tiempo': '3 meses',
-            'presupuesto': '$30,000'
-        },
-        {
-            'titulo': 'Dashboard predictivo de mantenimiento con IoT',
-            'descripcion': 'Sensores IoT que predigan fallas antes de que ocurran',
-            'beneficios': 'Reducción del 70% en paradas no planificadas',
-            'recursos': 'Sensores IoT, plataforma de análisis, técnicos',
-            'tiempo': '5 meses',
-            'presupuesto': '$55,000'
-        },
-        {
-            'titulo': 'Marketplace interno de conocimiento',
-            'descripcion': 'Plataforma donde empleados compartan y moneticen conocimiento interno',
-            'beneficios': 'Aumento del 50% en colaboración interdepartamental',
-            'recursos': 'Desarrolladores full-stack, diseñador, community manager',
-            'tiempo': '4 meses',
-            'presupuesto': '$35,000'
-        },
-        {
-            'titulo': 'Sistema de reconocimiento facial para seguridad',
-            'descripcion': 'Implementar acceso biométrico en todas las instalaciones',
-            'beneficios': 'Mejora del 90% en control de accesos',
-            'recursos': 'Cámaras especializadas, software IA, integradores',
-            'tiempo': '3 meses',
-            'presupuesto': '$40,000'
-        },
-        {
-            'titulo': 'Asistente virtual de voz para reuniones',
-            'descripcion': 'IA que transcriba, resuma y genere acciones de reuniones automáticamente',
-            'beneficios': 'Ahorro de 5 horas semanales por empleado',
-            'recursos': 'Licencias de IA, desarrollador, trainer',
-            'tiempo': '2 meses',
-            'presupuesto': '$18,000'
-        },
-        {
-            'titulo': 'Plataforma de innovación abierta con clientes',
-            'descripcion': 'Portal donde clientes propongan mejoras y voten ideas',
-            'beneficios': 'Incremento del 40% en satisfacción del cliente',
-            'recursos': 'Desarrolladores, moderadores, sistema de recompensas',
-            'tiempo': '3 meses',
-            'presupuesto': '$28,000'
-        },
-        {
-            'titulo': 'Gemelo digital de planta de producción',
-            'descripcion': 'Réplica virtual de toda la operación para simulaciones y optimización',
-            'beneficios': 'Optimización del 25% en eficiencia operativa',
-            'recursos': 'Consultores especializados, software de simulación',
-            'tiempo': '8 meses',
-            'presupuesto': '$120,000'
-        },
-        {
-            'titulo': 'Sistema de firma digital con blockchain',
-            'descripcion': 'Eliminar papel implementando firmas digitales verificables',
-            'beneficios': 'Reducción del 100% en uso de papel para contratos',
-            'recursos': 'Plataforma de firma digital, capacitación legal',
-            'tiempo': '2 meses',
-            'presupuesto': '$15,000'
-        },
-        {
-            'titulo': 'Red neuronal para detección de fraudes',
-            'descripcion': 'IA que detecte patrones anómalos en transacciones en tiempo real',
-            'beneficios': 'Prevención del 85% de intentos de fraude',
-            'recursos': 'Data scientists, infraestructura GPU, datos históricos',
-            'tiempo': '5 meses',
-            'presupuesto': '$65,000'
-        },
-        {
-            'titulo': 'Aplicación AR para capacitación técnica',
-            'descripcion': 'Realidad aumentada que guíe paso a paso en procedimientos complejos',
-            'beneficios': 'Reducción del 60% en errores de procedimiento',
-            'recursos': 'Desarrollador AR, dispositivos, contenido 3D',
-            'tiempo': '4 meses',
-            'presupuesto': '$42,000'
-        },
-        {
-            'titulo': 'Bot de reclutamiento con IA',
-            'descripcion': 'Automatizar screening inicial de candidatos con entrevistas por chat',
-            'beneficios': 'Reducción del 70% en tiempo de reclutamiento',
-            'recursos': 'Plataforma de IA conversacional, psicólogo organizacional',
-            'tiempo': '2 meses',
-            'presupuesto': '$22,000'
-        },
-        {
-            'titulo': 'Sistema de recomendación de productos con ML',
-            'descripcion': 'Motor que sugiera productos basado en comportamiento del usuario',
-            'beneficios': 'Incremento del 45% en ventas cruzadas',
-            'recursos': 'Data scientists, infraestructura cloud',
-            'tiempo': '3 meses',
-            'presupuesto': '$38,000'
-        },
-        {
-            'titulo': 'Plataforma de mentoring con matching automático',
-            'descripcion': 'Sistema que conecte mentores y aprendices según perfiles e intereses',
-            'beneficios': 'Mejora del 30% en desarrollo profesional',
-            'recursos': 'Desarrolladores, psicólogo, diseñador UX',
-            'tiempo': '3 meses',
-            'presupuesto': '$25,000'
-        },
-        {
-            'titulo': 'Dashboard de sostenibilidad en tiempo real',
-            'descripcion': 'Monitoreo continuo de métricas ambientales y sociales',
-            'beneficios': 'Reducción del 20% en huella de carbono',
-            'recursos': 'Sensores ambientales, analista de datos',
-            'tiempo': '2 meses',
-            'presupuesto': '$18,000'
-        },
-        {
-            'titulo': 'Automatización RPA de procesos administrativos',
-            'descripcion': 'Robots de software para tareas repetitivas administrativas',
-            'beneficios': 'Liberación del 40% del tiempo en tareas manuales',
-            'recursos': 'Licencias RPA, consultor de procesos',
-            'tiempo': '3 meses',
-            'presupuesto': '$32,000'
-        },
-        {
-            'titulo': 'Sistema de gestión de ideas con votación',
-            'descripcion': 'Plataforma colaborativa para proponer y votar mejoras internas',
-            'beneficios': 'Aumento del 60% en participación en innovación',
-            'recursos': 'Desarrollador full-stack, facilitador de innovación',
-            'tiempo': '2 meses',
-            'presupuesto': '$20,000'
-        },
-        {
-            'titulo': 'Análisis predictivo de rotación de personal',
-            'descripcion': 'Modelo ML que identifique empleados en riesgo de renuncia',
-            'beneficios': 'Reducción del 30% en rotación no deseada',
-            'recursos': 'Data scientist, analista de RRHH',
-            'tiempo': '3 meses',
-            'presupuesto': '$28,000'
-        },
-        {
-            'titulo': 'Plataforma de economía circular interna',
-            'descripcion': 'Sistema para reutilizar y compartir recursos entre departamentos',
-            'beneficios': 'Ahorro del 25% en compras de materiales',
-            'recursos': 'Desarrolladores, coordinador de sostenibilidad',
-            'tiempo': '4 meses',
-            'presupuesto': '$35,000'
-        },
-        {
-            'titulo': 'Chatbot de onboarding para nuevos empleados',
-            'descripcion': 'Asistente virtual que guíe en primeros días de trabajo',
-            'beneficios': 'Reducción del 50% en tiempo de adaptación',
-            'recursos': 'Desarrollador de chatbots, especialista en RRHH',
-            'tiempo': '2 meses',
-            'presupuesto': '$16,000'
-        },
-        {
-            'titulo': 'Sistema de gestión visual con kanban digital',
-            'descripcion': 'Tableros digitales interactivos para gestión de proyectos',
-            'beneficios': 'Mejora del 35% en cumplimiento de plazos',
-            'recursos': 'Licencias de software, capacitador ágil',
-            'tiempo': '1 mes',
-            'presupuesto': '$10,000'
-        },
-        {
-            'titulo': 'Plataforma de crowdsourcing para innovación',
-            'descripcion': 'Abrir retos de innovación a comunidad externa',
-            'beneficios': 'Acceso a 10x más ideas innovadoras',
-            'recursos': 'Plataforma web, community manager, premios',
-            'tiempo': '3 meses',
-            'presupuesto': '$30,000'
-        },
-        {
-            'titulo': 'Sistema de análisis de sentimientos en redes',
-            'descripcion': 'Monitorear percepción de marca en tiempo real',
-            'beneficios': 'Respuesta 80% más rápida a crisis de reputación',
-            'recursos': 'Herramientas de social listening, analista',
-            'tiempo': '2 meses',
-            'presupuesto': '$24,000'
-        },
-        {
-            'titulo': 'Laboratorio de innovación móvil',
-            'descripcion': 'Unidad móvil para probar innovaciones en diferentes ubicaciones',
-            'beneficios': 'Validación 3x más rápida de conceptos',
-            'recursos': 'Vehículo adaptado, equipamiento, facilitadores',
-            'tiempo': '4 meses',
-            'presupuesto': '$60,000'
-        },
-        {
-            'titulo': 'Sistema de gestión de conocimiento con IA',
-            'descripcion': 'Base de conocimiento que aprenda y sugiera información relevante',
-            'beneficios': 'Reducción del 40% en tiempo de búsqueda de información',
-            'recursos': 'Plataforma de IA, arquitecto de información',
-            'tiempo': '3 meses',
-            'presupuesto': '$35,000'
-        },
-        {
-            'titulo': 'Red de sensores para smart building',
-            'descripcion': 'Convertir oficinas en espacios inteligentes y eficientes',
-            'beneficios': 'Ahorro del 30% en consumo energético',
-            'recursos': 'Sensores IoT, plataforma de gestión, instaladores',
-            'tiempo': '5 meses',
-            'presupuesto': '$50,000'
-        },
-        {
-            'titulo': 'Programa de intraemprendimiento digital',
-            'descripcion': 'Incubadora interna para proyectos digitales de empleados',
-            'beneficios': 'Generación de 5 nuevas líneas de negocio al año',
-            'recursos': 'Mentores, presupuesto semilla, espacio de trabajo',
-            'tiempo': '6 meses',
-            'presupuesto': '$80,000'
-        },
-        {
-            'titulo': 'Sistema de realidad mixta para diseño',
-            'descripcion': 'Herramienta MR para diseño colaborativo 3D en tiempo real',
-            'beneficios': 'Reducción del 50% en tiempo de prototipado',
-            'recursos': 'Dispositivos HoloLens, desarrollador MR',
-            'tiempo': '4 meses',
-            'presupuesto': '$55,000'
-        },
-        {
-            'titulo': 'Plataforma de microlearning con IA',
-            'descripcion': 'Sistema que personalice rutas de aprendizaje según cada empleado',
-            'beneficios': 'Mejora del 45% en competencias técnicas',
-            'recursos': 'Plataforma LMS con IA, diseñador instruccional',
-            'tiempo': '3 meses',
-            'presupuesto': '$32,000'
-        },
-        {
-            'titulo': 'Centro de comando digital integrado',
-            'descripcion': 'Sala de control con visualización en tiempo real de toda la operación',
-            'beneficios': 'Toma de decisiones 60% más rápida',
-            'recursos': 'Pantallas, software de integración, analistas',
-            'tiempo': '4 meses',
-            'presupuesto': '$70,000'
-        },
-        {
-            'titulo': 'Bot de análisis de contratos con NLP',
-            'descripcion': 'IA que revise y extraiga información clave de contratos',
-            'beneficios': 'Reducción del 80% en tiempo de revisión legal',
-            'recursos': 'Modelo NLP especializado, abogado trainer',
-            'tiempo': '3 meses',
-            'presupuesto': '$40,000'
-        },
-        {
-            'titulo': 'Sistema de pagos con criptomonedas',
-            'descripcion': 'Aceptar pagos en criptomonedas principales',
-            'beneficios': 'Acceso a nuevo segmento de mercado del 15%',
-            'recursos': 'Integrador blockchain, asesor financiero',
-            'tiempo': '2 meses',
-            'presupuesto': '$25,000'
-        },
-        {
-            'titulo': 'Plataforma de bienestar con wearables',
-            'descripcion': 'App que conecte con dispositivos de salud para programa wellness',
-            'beneficios': 'Reducción del 20% en costos de seguro médico',
-            'recursos': 'Desarrollador de apps, dispositivos wearables',
-            'tiempo': '3 meses',
-            'presupuesto': '$35,000'
-        },
-        {
-            'titulo': 'Sistema de traducción en tiempo real',
-            'descripcion': 'Herramienta para reuniones multiidioma con traducción simultánea',
-            'beneficios': 'Eliminación de barreras de idioma en equipos globales',
-            'recursos': 'Licencias de IA de traducción, equipos de audio',
-            'tiempo': '2 meses',
-            'presupuesto': '$20,000'
-        },
-        {
-            'titulo': 'Marketplace de habilidades internas',
-            'descripcion': 'Plataforma para intercambiar habilidades entre empleados',
-            'beneficios': 'Aumento del 40% en desarrollo de habilidades',
-            'recursos': 'Desarrollador, diseñador UX, coordinador',
-            'tiempo': '3 meses',
-            'presupuesto': '$28,000'
-        },
-        {
-            'titulo': 'Sistema de gestión de energía con IA',
-            'descripcion': 'Optimización automática del consumo energético',
-            'beneficios': 'Reducción del 35% en costos de energía',
-            'recursos': 'Sensores, plataforma de IA, ingeniero energético',
-            'tiempo': '4 meses',
-            'presupuesto': '$45,000'
-        },
-        {
-            'titulo': 'Laboratorio de prototipado rápido',
-            'descripcion': 'Espacio con impresoras 3D y herramientas de fabricación digital',
-            'beneficios': 'Reducción del 70% en tiempo de prototipado',
-            'recursos': 'Equipos de fabricación, técnico especializado',
-            'tiempo': '3 meses',
-            'presupuesto': '$50,000'
-        },
-        {
-            'titulo': 'Asistente de código con IA',
-            'descripcion': 'Herramienta que sugiera y corrija código en tiempo real',
-            'beneficios': 'Aumento del 40% en productividad de desarrollo',
-            'recursos': 'Licencias de GitHub Copilot o similar',
-            'tiempo': '1 mes',
-            'presupuesto': '$12,000'
-        },
-        {
-            'titulo': 'Sistema de gestión de crisis con IA',
-            'descripcion': 'Plataforma que detecte y gestione crisis potenciales',
-            'beneficios': 'Respuesta 5x más rápida ante emergencias',
-            'recursos': 'Software de monitoreo, protocolo de crisis',
-            'tiempo': '3 meses',
-            'presupuesto': '$38,000'
-        },
-        {
-            'titulo': 'Red de innovación con universidades',
-            'descripcion': 'Colaboración estructurada con centros académicos',
-            'beneficios': 'Acceso a talento e investigación de vanguardia',
-            'recursos': 'Coordinador académico, presupuesto para proyectos',
-            'tiempo': '6 meses',
-            'presupuesto': '$60,000'
-        },
-        {
-            'titulo': 'Sistema de gestión de carbono',
-            'descripcion': 'Plataforma para medir y compensar huella de carbono',
-            'beneficios': 'Alcanzar neutralidad de carbono en 2 años',
-            'recursos': 'Software especializado, consultor ambiental',
-            'tiempo': '4 meses',
-            'presupuesto': '$40,000'
-        },
-        {
-            'titulo': 'Plataforma de eventos virtuales inmersivos',
-            'descripcion': 'Espacios virtuales 3D para eventos y conferencias',
-            'beneficios': 'Ahorro del 60% en costos de eventos presenciales',
-            'recursos': 'Plataforma de metaverso, diseñador 3D',
-            'tiempo': '3 meses',
+    except Exception as e:
+        st.error(f"Error en análisis con IA: {e}")
+        return analyze_initiative_with_ai(initiative, None)
+
+# Cargar datos
+if use_demo_data:
+    df = generate_demo_data()
+    st.info("📊 Usando datos de demostración")
+else:
+    if spreadsheet_id and sheet_name:
+        # En producción, cargar credenciales apropiadamente
+        df = pd.DataFrame()  # Placeholder
+        st.warning("⚠️ Configura las credenciales de Google para conectar con Sheets real")
+    else:
+        df = pd.DataFrame()
+        st.warning("⚠️ Configura el ID de la hoja de cálculo en la barra lateral")
+
+if not df.empty:
+    # Análisis de cada iniciativa
+    if 'analyzed_data' not in st.session_state:
+        st.session_state.analyzed_data = []
+        
+        with st.spinner("🤖 Analizando iniciativas con IA..."):
+            progress_bar = st.progress(0)
+            for idx, row in df.iterrows():
+                analysis = analyze_initiative_with_ai(row, openai_api_key)
+                row_dict = row.to_dict()
+                row_dict.update(analysis)
+                st.session_state.analyzed_data.append(row_dict)
+                progress_bar.progress((idx + 1) / len(df))
+            progress_bar.empty()
+    
+    analyzed_df = pd.DataFrame(st.session_state.analyzed_data)
+    
+    # Métricas principales
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total de Iniciativas", len(analyzed_df))
+    
+    with col2:
+        avg_viability = analyzed_df['viabilidad'].mean()
+        st.metric("Viabilidad Promedio", f"{avg_viability:.1f}%")
+    
+    with col3:
+        high_impact = len(analyzed_df[analyzed_df['impacto'] >= 4])
+        st.metric("Alto Impacto", high_impact)
+    
+    with col4:
+        low_effort = len(analyzed_df[analyzed_df['esfuerzo'] <= 2])
+        st.metric("Bajo Esfuerzo", low_effort)
+    
+    # Tabs para diferentes vistas
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "💡 Iniciativas", "📈 Análisis", "📋 Informes"])
+    
+    with tab1:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Matriz Esfuerzo-Impacto
+            fig_matrix = go.Figure()
+            
+            # Definir colores por cuadrante
+            colors = []
+            for _, row in analyzed_df.iterrows():
+                if row['impacto'] >= 3 and row['esfuerzo'] <= 3:
+                    colors.append('#00cc44')  # Quick wins
+                elif row['impacto'] >= 3 and row['esfuerzo'] > 3:
+                    colors.append('#ff9900')  # Proyectos estratégicos
+                elif row['impacto'] < 3 and row['esfuerzo'] <= 3:
+                    colors.append('#3366cc')  # Fill-ins
+                else:
+                    colors.append('#cc0000')  # Evitar
+            
+            fig_matrix.add_trace(go.Scatter(
+                x=analyzed_df['esfuerzo'],
+                y=analyzed_df['impacto'],
+                mode='markers+text',
+                marker=dict(size=15, color=colors),
+                text=analyzed_df['Título de la iniciativa'].str[:20] + '...',
+                textposition="top center",
+                textfont=dict(size=9),
+                hovertemplate='<b>%{text}</b><br>Esfuerzo: %{x}<br>Impacto: %{y}<extra></extra>'
+            ))
+            
+            # Añadir cuadrantes
+            fig_matrix.add_shape(type="line", x0=3, y0=0, x1=3, y1=5,
+                                line=dict(color="gray", width=1, dash="dash"))
+            fig_matrix.add_shape(type="line", x0=0, y0=3, x1=5, y1=3,
+                                line=dict(color="gray", width=1, dash="dash"))
+            
+            # Etiquetas de cuadrantes
+            fig_matrix.add_annotation(x=1.5, y=4.5, text="Quick Wins", showarrow=False,
+                                     font=dict(size=12, color="green"))
+            fig_matrix.add_annotation(x=4, y=4.5, text="Estratégicos", showarrow=False,
+                                     font=dict(size=12, color="orange"))
+            fig_matrix.add_annotation(x=1.5, y=1.5, text="Fill-ins", showarrow=False,
+                                     font=dict(size=12, color="blue"))
+            fig_matrix.add_annotation(x=4, y=1.5, text="Evitar", showarrow=False,
+                                     font=dict(size=12, color="red"))
+            
+            fig_matrix.update_layout(
+                title="Matriz Esfuerzo-Impacto",
+                xaxis_title="Esfuerzo →",
+                yaxis_title="Impacto →",
+                xaxis=dict(range=[0.5, 5.5]),
+                yaxis=dict(range=[0.5, 5.5]),
+                height=400
+            )
+            
+            st.plotly_chart(fig_matrix, use_container_width=True)
+        
+        with col2:
+            # Distribución por categorías
+            category_counts = analyzed_df['categoria'].value_counts()
+            fig_pie = px.pie(values=category_counts.values, names=category_counts.index,
+                            title="Distribución por Categorías",
+                            color_discrete_map={
+                                'Tecnología': '#1f77b4',
+                                'Procesos': '#ff7f0e',
+                                'Cultura': '#2ca02c',
+                                'Producto': '#d62728'
+                            })
+            fig_pie.update_layout(height=400)
+            st.plotly_chart(fig_pie, use_container_width=True)
+        
+        # Timeline de iniciativas
+        st.subheader("📅 Timeline de Propuestas")
+        analyzed_df['Timestamp'] = pd.to_datetime(analyzed_df['Timestamp'])
+        
+        fig_timeline = px.scatter(analyzed_df, x='Timestamp', y='Departamento',
+                                 size='viabilidad', color='categoria',
+                                 hover_data=['Título de la iniciativa', 'viabilidad'],
+                                 title="Iniciativas por Departamento en el Tiempo")
+        fig_timeline.update_layout(height=300)
+        st.plotly_chart(fig_timeline, use_container_width=True)
+        
+        # Top iniciativas
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("🏆 Top 5 - Mayor Viabilidad")
+            top_viable = analyzed_df.nlargest(5, 'viabilidad')[['Título de la iniciativa', 'viabilidad', 'Departamento']]
+            st.dataframe(top_viable, hide_index=True)
+        
+        with col2:
+            st.subheader("⚡ Top 5 - Quick Wins")
+            quick_wins = analyzed_df[(analyzed_df['impacto'] >= 3) & (analyzed_df['esfuerzo'] <= 3)]
+            quick_wins = quick_wins.nlargest(5, 'viabilidad')[['Título de la iniciativa', 'impacto', 'esfuerzo']]
+            st.dataframe(quick_wins, hide_index=True)
+    
+    with tab2:
+        st.subheader("💡 Detalle de Iniciativas")
+        
+        # Filtros
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            dept_filter = st.multiselect("Departamento", analyzed_df['Departamento'].unique())
+        
+        with col2:
+            cat_filter = st.multiselect("Categoría", analyzed_df['categoria'].unique())
+        
+        with col3:
+            viab_filter = st.slider("Viabilidad mínima", 0, 100, 50)
+        
+        # Aplicar filtros
+        filtered_df = analyzed_df.copy()
+        if dept_filter:
+            filtered_df = filtered_df[filtered_df['Departamento'].isin(dept_filter)]
+        if cat_filter:
+            filtered_df = filtered_df[filtered_df['categoria'].isin(cat_filter)]
+        filtered_df = filtered_df[filtered_df['viabilidad'] >= viab_filter]
+        
+        # Mostrar iniciativas
+        for idx, row in filtered_df.iterrows():
+            with st.expander(f"{row['Título de la iniciativa']} - {row['Nombre']}"):
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric("Viabilidad", f"{row['viabilidad']}%")
+                    st.metric("Categoría", row['categoria'])
+                
+                with col2:
+                    st.metric("Impacto", f"{row['impacto']}/5")
+                    st.metric("Departamento", row['Departamento'])
+                
+                with col3:
+                    st.metric("Esfuerzo", f"{row['esfuerzo']}/5")
+                    st.metric("Tiempo", row['Tiempo estimado'])
+                
+                st.markdown("**Descripción:**")
+                st.write(row['Descripción'])
+                
+                st.markdown("**Beneficios esperados:**")
+                st.write(row['Beneficios esperados'])
+                
+                st.markdown("**Recursos necesarios:**")
+                st.write(row['Recursos necesarios'])
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("**🚨 Riesgos identificados:**")
+                    for risk in row['riesgos']:
+                        st.write(f"• {risk}")
+                
+                with col2:
+                    st.markdown("**✅ Recomendaciones:**")
+                    for rec in row['recomendaciones']:
+                        st.write(f"• {rec}")
+    
+    with tab3:
+        st.subheader("📈 Análisis Detallado")
+        
+        # Análisis por departamento
+        dept_analysis = analyzed_df.groupby('Departamento').agg({
+            'viabilidad': 'mean',
+            'impacto': 'mean',
+            'esfuerzo': 'mean',
+            'Título de la iniciativa': 'count'
+        }).round(2)
+        dept_analysis.columns = ['Viabilidad Promedio', 'Impacto Promedio', 'Esfuerzo Promedio', 'Cantidad']
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            fig_dept = px.bar(dept_analysis.reset_index(), x='Departamento', y='Cantidad',
+                             title="Iniciativas por Departamento",
+                             color='Cantidad', color_continuous_scale='Blues')
+            st.plotly_chart(fig_dept, use_container_width=True)
+        
+        with col2:
+            fig_viab_dept = px.bar(dept_analysis.reset_index(), x='Departamento', y='Viabilidad Promedio',
+                                  title="Viabilidad Promedio por Departamento",
+                                  color='Viabilidad Promedio', color_continuous_scale='Greens')
+            st.plotly_chart(fig_viab_dept, use_container_width=True)
+        
+        # Correlación entre variables
+        st.subheader("🔍 Análisis de Correlaciones")
+        
+        # Convertir presupuesto a numérico
+        analyzed_df['Presupuesto_num'] = analyzed_df['Presupuesto estimado'].str.replace('$', '').str.replace(',', '').astype(float)
+        
+        correlation_data = analyzed_df[['viabilidad', 'impacto', 'esfuerzo', 'Presupuesto_num']]
+        
+        fig_corr = px.scatter_matrix(correlation_data,
+                                     dimensions=['viabilidad', 'impacto', 'esfuerzo', 'Presupuesto_num'],
+                                     title="Matriz de Correlación",
+                                     height=600)
+        st.plotly_chart(fig_corr, use_container_width=True)
+        
+        # Distribución de viabilidad
+        fig_hist = px.histogram(analyzed_df, x='viabilidad', nbins=20,
+                               title="Distribución de Puntajes de Viabilidad",
+                               labels={'viabilidad': 'Viabilidad (%)', 'count': 'Cantidad'})
+        fig_hist.update_traces(marker_color='lightblue', marker_line_color='darkblue', marker_line_width=1)
+        st.plotly_chart(fig_hist, use_container_width=True)
+    
+    with tab4:
+        st.subheader("📋 Generación de Informes")
+        
+        report_type = st.selectbox("Tipo de informe", 
+                                  ["Resumen Ejecutivo", "Informe Detallado", "Reporte Quick Wins", "Análisis por Departamento"])
+        
+        if st.button("📄 Generar Informe"):
+            with st.spinner("Generando informe..."):
+                time.sleep(2)  # Simular generación
+                
+                if report_type == "Resumen Ejecutivo":
+                    st.markdown("### 📊 Resumen Ejecutivo - Iniciativas de Innovación")
+                    st.markdown(f"**Fecha:** {datetime.now().strftime('%Y-%m-%d')}")
+                    st.markdown("---")
+                    
+                    st.markdown(f"""
+                    **Resumen General:**
+                    - Total de iniciativas recibidas: {len(analyzed_df)}
+                    - Viabilidad promedio: {analyzed_df['viabilidad'].mean():.1f}%
+                    - Iniciativas de alto impacto: {len(analyzed_df[analyzed_df['impacto'] >= 4])}
+                    - Quick wins identificados: {len(analyzed_df[(analyzed_df['impacto'] >= 3) & (analyzed_df['esfuerzo'] <= 3)])}
+                    
+                    **Distribución por Categorías:**
+                    """)
+                    
+                    for cat, count in analyzed_df['categoria'].value_counts().items():
+                        st.markdown(f"- {cat}: {count} iniciativas ({count/len(analyzed_df)*100:.1f}%)")
+                    
+                    st.markdown("""
+                    **Recomendaciones Principales:**
+                    1. Priorizar las iniciativas identificadas como Quick Wins
+                    2. Formar equipos multidisciplinarios para proyectos estratégicos
+                    3. Asignar recursos a las iniciativas con viabilidad superior al 80%
+                    """)
+                    
+                    st.success("✅ Informe generado exitosamente")
+                
+                elif report_type == "Reporte Quick Wins":
+                    st.markdown("### ⚡ Reporte de Quick Wins")
+                    quick_wins_df = analyzed_df[(analyzed_df['impacto'] >= 3) & (analyzed_df['esfuerzo'] <= 3)]
+                    quick_wins_df = quick_wins_df.sort_values('viabilidad', ascending=False)
+                    
+                    for idx, row in quick_wins_df.head(10).iterrows():
+                        st.markdown(f"""
+                        **{idx+1}. {row['Título de la iniciativa']}**
+                        - Propuesto por: {row['Nombre']} ({row['Departamento']})
+                        - Viabilidad: {row['viabilidad']}%
+                        - Impacto: {row['impacto']}/5 | Esfuerzo: {row['esfuerzo']}/5
+                        - Presupuesto: {row['Presupuesto estimado']}
+                        - Tiempo: {row['Tiempo estimado']}
+                        ---
+                        """)
+        
+        # Exportar datos
+        st.subheader("💾 Exportar Datos")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            csv = analyzed_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Descargar CSV completo",
+                data=csv,
+                file_name=f"iniciativas_innovacion_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv"
+            )
+        
+        with col2:
+            # Preparar datos para Excel (simplificado)
+            excel_data = analyzed_df[['Timestamp', 'Nombre', 'Departamento', 'Título de la iniciativa',
+                                     'viabilidad', 'impacto', 'esfuerzo', 'categoria']].copy()
+            
+            csv_excel = excel_data.to_csv(index=False)
+            st.download_button(
+                label="📥 Descargar resumen",
+                data=csv_excel,
+                file_name=f"resumen_iniciativas_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv"
+            )
+
+else:
+    st.warning("⚠️ No hay datos disponibles. Configura la conexión a Google Sheets o activa los datos de demostración.")
+    
+    # Mostrar estructura esperada del formulario
+    st.info("""
+    ### 📝 Estructura del Google Forms sugerida:
+    
+    1. **Información del solicitante:**
+       - Nombre completo
+       - Correo electrónico
+       - Departamento
+    
+    2. **Detalles de la iniciativa:**
+       - Título de la iniciativa
+       - Descripción detallada
+       - Beneficios esperados
+       - Recursos necesarios
+       - Tiempo estimado de implementación
+       - Presupuesto estimado
+    
+    3. **Información adicional:**
+       - ¿Requiere colaboración con otros departamentos?
+       - ¿Existen riesgos identificados?
+       - Nivel de prioridad (Alta/Media/Baja)
+    """)
+
+# Footer
+st.markdown("---")
+st.markdown("💡 **Sistema de Análisis de Iniciativas de Innovación** | Desarrollado con Streamlit")
