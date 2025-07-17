@@ -1,575 +1,907 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 import plotly.express as px
 import plotly.graph_objects as go
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
+from plotly.subplots import make_subplots
+import gspread
+from google.oauth2.service_account import Credentials
 import openai
+from openai import OpenAI
 import json
 import time
-
-#Configuración de API KEY
-
-openai_key = st.secrets["OPENAI_API_KEY"]
-openai.api_key = openai_key
-
+from typing import Dict, List, Tuple
+import re
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Análisis de Iniciativas de Innovación",
+    page_title="Sistema de Análisis de Iniciativas - Alico",
     page_icon="💡",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 # Estilos CSS personalizados
 st.markdown("""
 <style>
-    .metric-card {
-        background-color: #f0f2f6;
-        padding: 20px;
-        border-radius: 10px;
+    .main-header {
+        font-size: 3rem;
+        font-weight: bold;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
         text-align: center;
+        padding: 2rem 0;
+    }
+    .metric-card {
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        padding: 1.5rem;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        text-align: center;
+        margin: 0.5rem;
     }
     .initiative-card {
-        background-color: #ffffff;
-        padding: 20px;
+        background: white;
+        padding: 1.5rem;
         border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        margin-bottom: 20px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        margin-bottom: 1rem;
+        border-left: 4px solid #667eea;
+    }
+    .status-badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.875rem;
+        font-weight: bold;
+    }
+    .high-impact {
+        background-color: #10b981;
+        color: white;
+    }
+    .medium-impact {
+        background-color: #f59e0b;
+        color: white;
+    }
+    .low-impact {
+        background-color: #ef4444;
+        color: white;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Título principal
-st.title("🚀 Análisis de Iniciativas de Innovación")
-st.markdown("---")
+# Inicializar estado de la sesión
+if 'data' not in st.session_state:
+    st.session_state.data = None
+if 'analyzed_data' not in st.session_state:
+    st.session_state.analyzed_data = None
+if 'last_update' not in st.session_state:
+    st.session_state.last_update = None
 
-# Sidebar para configuración
-with st.sidebar:
-    st.header("⚙️ Configuración")
-    
-    # Google Sheets Configuration
-    st.subheader("📊 Configuración Google Sheets")
-    spreadsheet_id = st.text_input("ID de la hoja de cálculo")
-    sheet_name = st.text_input("Nombre de la hoja", value="Respuestas")
-    
-    # Credenciales de Google (en producción, usar secrets)
-    use_demo_data = st.checkbox("Usar datos de demostración", value=True)
-    
-    # Botón de actualización
-    if st.button("🔄 Actualizar datos"):
-        st.rerun()
-
-# Funciones auxiliares
-def get_google_sheets_data(spreadsheet_id, sheet_name, credentials):
-    """Obtiene datos de Google Sheets"""
+# Función para conectar con Google Sheets
+@st.cache_resource
+def connect_to_google_sheets():
+    """Conecta con Google Sheets usando las credenciales de servicio"""
     try:
-        service = build('sheets', 'v4', credentials=credentials)
-        sheet = service.spreadsheets()
-        result = sheet.values().get(
-            spreadsheetId=spreadsheet_id,
-            range=f"{sheet_name}!A:Z"
-        ).execute()
-        values = result.get('values', [])
-        
-        if not values:
-            return pd.DataFrame()
-        
-        df = pd.DataFrame(values[1:], columns=values[0])
-        return df
+        # Las credenciales deberían estar configuradas en Streamlit secrets
+        credentials = Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"],
+            scopes=[
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ]
+        )
+        client = gspread.authorize(credentials)
+        return client
     except Exception as e:
-        st.error(f"Error al conectar con Google Sheets: {e}")
-        return pd.DataFrame()
+        st.error(f"Error al conectar con Google Sheets: {str(e)}")
+        return None
 
-def generate_demo_data():
-    """Genera datos de demostración"""
-    data = {
-        'Timestamp': [
-            '2025-01-15 10:30:00', '2025-01-15 11:45:00', '2025-01-15 14:20:00',
-            '2025-01-16 09:15:00', '2025-01-16 10:00:00', '2025-01-16 15:30:00',
-            '2025-01-17 08:45:00', '2025-01-17 11:20:00', '2025-01-17 13:00:00',
-            '2025-01-18 10:10:00'
-        ],
-        'Nombre': [
-            'Ana García', 'Carlos López', 'María Rodríguez', 'Juan Pérez',
-            'Laura Martínez', 'Pedro Sánchez', 'Sofia Hernández', 'Diego Torres',
-            'Carmen Ruiz', 'Andrés Morales'
-        ],
-        'Departamento': [
-            'Ventas', 'IT', 'Marketing', 'Operaciones', 'RRHH',
-            'IT', 'Finanzas', 'Marketing', 'Ventas', 'IT'
-        ],
-        'Título de la iniciativa': [
-            'CRM inteligente con IA para predicción de ventas',
-            'Automatización de procesos de testing con ML',
-            'Campaña de marketing personalizada con análisis predictivo',
-            'Optimización de rutas de entrega con algoritmos genéticos',
-            'Plataforma de bienestar empleados con gamificación',
-            'Chatbot interno para soporte técnico',
-            'Dashboard financiero en tiempo real',
-            'Sistema de recomendación de contenido para clientes',
-            'App móvil para gestión de clientes en campo',
-            'Migración a arquitectura de microservicios'
-        ],
-        'Descripción': [
-            'Implementar un CRM que use IA para predecir qué clientes tienen mayor probabilidad de compra',
-            'Crear suite de testing automatizado que aprenda de errores previos para mejorar cobertura',
-            'Desarrollar sistema que personalice campañas según comportamiento histórico del cliente',
-            'Sistema que calcule rutas óptimas considerando tráfico, clima y prioridades de entrega',
-            'App que incentive hábitos saludables mediante puntos y recompensas',
-            'Bot inteligente que resuelva consultas técnicas frecuentes del personal',
-            'Visualización en tiempo real de KPIs financieros con alertas automáticas',
-            'Motor de recomendaciones basado en historial y preferencias del cliente',
-            'Aplicación móvil offline-first para gestión de visitas comerciales',
-            'Modernizar arquitectura monolítica actual a microservicios escalables'
-        ],
-        'Beneficios esperados': [
-            'Aumento del 30% en conversión de ventas',
-            'Reducción del 50% en tiempo de testing',
-            'Incremento del 25% en engagement de clientes',
-            'Ahorro del 20% en costos de combustible',
-            'Reducción del 15% en ausentismo laboral',
-            'Disminución del 40% en tickets de soporte',
-            'Detección temprana de desviaciones presupuestarias',
-            'Aumento del 35% en ventas cruzadas',
-            'Mejora del 30% en productividad de vendedores',
-            'Reducción del 60% en tiempo de despliegue'
-        ],
-        'Recursos necesarios': [
-            'Licencias de IA, 2 desarrolladores, 3 meses',
-            '1 ingeniero QA senior, herramientas de testing, 2 meses',
-            'Plataforma de marketing automation, 1 analista, 2 meses',
-            'Servicio de mapas, 2 desarrolladores, 4 meses',
-            'Diseñador UX, 2 desarrolladores, partner de wellness, 3 meses',
-            'Plataforma de chatbot, 1 desarrollador, 1 mes',
-            'Licencias de BI, 1 analista, 2 meses',
-            'Infraestructura ML, 2 data scientists, 4 meses',
-            '2 desarrolladores móviles, diseñador, 3 meses',
-            'Equipo de 5 desarrolladores, consultor de arquitectura, 6 meses'
-        ],
-        'Tiempo estimado': [
-            '3 meses', '2 meses', '2 meses', '4 meses', '3 meses',
-            '1 mes', '2 meses', '4 meses', '3 meses', '6 meses'
-        ],
-        'Presupuesto estimado': [
-            '$25,000', '$15,000', '$20,000', '$35,000', '$30,000',
-            '$8,000', '$12,000', '$40,000', '$25,000', '$80,000'
-        ]
-    }
-    
-    return pd.DataFrame(data)
-
-def analyze_initiative_with_ai(initiative, openai_api_key):
-    """Analiza una iniciativa usando OpenAI"""
-    if not openai_api_key:
-        # Análisis simple sin IA
-        return {
-            "viabilidad": np.random.randint(60, 95),
-            "impacto": np.random.randint(1, 6),
-            "esfuerzo": np.random.randint(1, 6),
-            "categoria": np.random.choice(["Tecnología", "Procesos", "Cultura", "Producto"]),
-            "riesgos": ["Falta de recursos", "Resistencia al cambio"],
-            "recomendaciones": ["Iniciar con piloto", "Formar equipo multidisciplinario"]
-        }
-    
+# Función para cargar datos desde Google Sheets
+def load_data_from_sheets(sheet_url):
+    """Carga los datos desde Google Sheets"""
     try:
-        openai.api_key = openai_api_key
+        client = connect_to_google_sheets()
+        if client is None:
+            return None
+        
+        sheet = client.open_by_url(sheet_url)
+        worksheet = sheet.get_worksheet(0)  # Primera hoja
+        data = worksheet.get_all_records()
+        
+        if data:
+            df = pd.DataFrame(data)
+            # Renombrar columnas para facilitar el trabajo
+            column_mapping = {
+                'Marca temporal': 'timestamp',
+                'Nombre de la iniciativa': 'nombre_iniciativa',
+                'Cuéntanos brevemente, ¿de qué trata tu iniciativa / idea innovadora?': 'descripcion',
+                'Nombre de quién propone': 'proponente',
+                'Número de celular al que te podamos contactar ': 'telefono',
+                'Correo al que te podamos contactar ': 'correo',
+                'Selecciona a qué público de interés perteneces ': 'publico_interes',
+                'Selecciona el área o proceso al cual perteneces ': 'area_proceso',
+                '¿Cuál el nombre de tu organización?': 'organizacion'
+            }
+            df.rename(columns=column_mapping, inplace=True)
+            
+            # Convertir timestamp a datetime
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            
+            return df
+        return None
+    except Exception as e:
+        st.error(f"Error al cargar datos: {str(e)}")
+        return None
+
+# Función para analizar iniciativas con OpenAI
+def analyze_initiative_with_ai(initiative: Dict) -> Dict:
+    """Analiza una iniciativa usando OpenAI GPT"""
+    try:
+        client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
         
         prompt = f"""
-        Analiza la siguiente iniciativa de innovación y proporciona una evaluación en formato JSON:
+        Analiza la siguiente iniciativa de innovación y proporciona una evaluación estructurada:
         
-        Título: {initiative['Título de la iniciativa']}
-        Descripción: {initiative['Descripción']}
-        Beneficios: {initiative['Beneficios esperados']}
-        Recursos: {initiative['Recursos necesarios']}
-        Tiempo: {initiative['Tiempo estimado']}
-        Presupuesto: {initiative['Presupuesto estimado']}
+        Nombre: {initiative['nombre_iniciativa']}
+        Descripción: {initiative['descripcion']}
+        Área: {initiative['area_proceso']}
         
-        Responde con un JSON que contenga:
-        - viabilidad: puntuación de 0-100
-        - impacto: del 1-5 (5 siendo el mayor impacto)
-        - esfuerzo: del 1-5 (5 siendo el mayor esfuerzo)
-        - categoria: clasificación principal (Tecnología, Procesos, Cultura, Producto)
-        - riesgos: lista de 2-3 riesgos principales
-        - recomendaciones: lista de 2-3 recomendaciones
+        Por favor, evalúa y proporciona la siguiente información en formato JSON:
+        1. Categoría principal (Tecnología, Sostenibilidad, Procesos, Producto, Bienestar, Otros)
+        2. Nivel de impacto potencial (1-10)
+        3. Nivel de esfuerzo estimado (1-10)
+        4. Viabilidad técnica (1-10)
+        5. Alineación estratégica (1-10)
+        6. Tiempo estimado de implementación (en meses)
+        7. Principales beneficios (lista de 3-5 puntos)
+        8. Principales riesgos o desafíos (lista de 3-5 puntos)
+        9. Recomendaciones específicas (lista de 3-5 puntos)
+        10. Puntuación global (1-100)
+        
+        Responde SOLO con el JSON, sin texto adicional.
         """
         
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "Eres un experto en innovación empresarial y análisis de proyectos."},
+                {"role": "user", "content": prompt}
+            ],
             temperature=0.7,
-            max_tokens=500
+            max_tokens=1000
         )
         
-        return json.loads(response.choices[0].message.content)
-    
+        # Parsear la respuesta JSON
+        analysis = json.loads(response.choices[0].message.content)
+        
+        return {
+            'categoria': analysis.get('categoria', 'Otros'),
+            'impacto': analysis.get('impacto', 5),
+            'esfuerzo': analysis.get('esfuerzo', 5),
+            'viabilidad_tecnica': analysis.get('viabilidad_tecnica', 5),
+            'alineacion_estrategica': analysis.get('alineacion_estrategica', 5),
+            'tiempo_implementacion': analysis.get('tiempo_implementacion', 6),
+            'beneficios': analysis.get('beneficios', []),
+            'riesgos': analysis.get('riesgos', []),
+            'recomendaciones': analysis.get('recomendaciones', []),
+            'puntuacion_global': analysis.get('puntuacion_global', 50)
+        }
     except Exception as e:
-        st.error(f"Error en análisis con IA: {e}")
-        return analyze_initiative_with_ai(initiative, None)
+        st.warning(f"Error en análisis AI para {initiative['nombre_iniciativa']}: {str(e)}")
+        # Retornar valores por defecto
+        return {
+            'categoria': 'Otros',
+            'impacto': 5,
+            'esfuerzo': 5,
+            'viabilidad_tecnica': 5,
+            'alineacion_estrategica': 5,
+            'tiempo_implementacion': 6,
+            'beneficios': ['Análisis pendiente'],
+            'riesgos': ['Análisis pendiente'],
+            'recomendaciones': ['Análisis pendiente'],
+            'puntuacion_global': 50
+        }
 
-# Cargar datos
-if use_demo_data:
-    df = generate_demo_data()
-    st.info("📊 Usando datos de demostración")
-else:
-    if spreadsheet_id and sheet_name:
-        # En producción, cargar credenciales apropiadamente
-        df = pd.DataFrame()  # Placeholder
-        st.warning("⚠️ Configura las credenciales de Google para conectar con Sheets real")
+# Función para procesar todas las iniciativas
+def process_initiatives(df: pd.DataFrame) -> pd.DataFrame:
+    """Procesa todas las iniciativas y añade análisis AI"""
+    analyzed_df = df.copy()
+    
+    # Añadir columnas para el análisis
+    analysis_columns = ['categoria', 'impacto', 'esfuerzo', 'viabilidad_tecnica', 
+                       'alineacion_estrategica', 'tiempo_implementacion', 'beneficios', 
+                       'riesgos', 'recomendaciones', 'puntuacion_global']
+    
+    for col in analysis_columns:
+        if col not in analyzed_df.columns:
+            analyzed_df[col] = None
+    
+    # Analizar cada iniciativa
+    progress_bar = st.progress(0)
+    for idx, row in analyzed_df.iterrows():
+        # Solo analizar si no ha sido analizada previamente
+        if pd.isna(row['puntuacion_global']):
+            with st.spinner(f"Analizando: {row['nombre_iniciativa']}..."):
+                analysis = analyze_initiative_with_ai(row.to_dict())
+                for key, value in analysis.items():
+                    analyzed_df.at[idx, key] = value
+        
+        progress_bar.progress((idx + 1) / len(analyzed_df))
+    
+    progress_bar.empty()
+    
+    # Calcular cuadrante en matriz esfuerzo-impacto
+    analyzed_df['cuadrante'] = analyzed_df.apply(
+        lambda x: categorizar_cuadrante(x['impacto'], x['esfuerzo']), axis=1
+    )
+    
+    return analyzed_df
+
+def categorizar_cuadrante(impacto: float, esfuerzo: float) -> str:
+    """Categoriza la iniciativa en un cuadrante de la matriz esfuerzo-impacto"""
+    if impacto >= 7 and esfuerzo <= 4:
+        return "Quick Wins"
+    elif impacto >= 7 and esfuerzo > 4:
+        return "Proyectos Estratégicos"
+    elif impacto < 7 and esfuerzo <= 4:
+        return "Fill Ins"
     else:
-        df = pd.DataFrame()
-        st.warning("⚠️ Configura el ID de la hoja de cálculo en la barra lateral")
+        return "Difíciles de Justificar"
 
-if not df.empty:
-    # Análisis de cada iniciativa
-    if 'analyzed_data' not in st.session_state:
-        st.session_state.analyzed_data = []
+# Función principal de la aplicación
+def main():
+    # Header
+    st.markdown('<h1 class="main-header">💡 Sistema de Análisis de Iniciativas de Innovación</h1>', unsafe_allow_html=True)
+    st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #6b7280;">Alico SAS BIC - Área de Innovación</p>', unsafe_allow_html=True)
+    
+    # Sidebar para configuración
+    with st.sidebar:
+        st.header("⚙️ Configuración")
         
-        with st.spinner("🤖 Analizando iniciativas con IA..."):
-            progress_bar = st.progress(0)
-            for idx, row in df.iterrows():
-                analysis = analyze_initiative_with_ai(row, openai_api_key)
-                row_dict = row.to_dict()
-                row_dict.update(analysis)
-                st.session_state.analyzed_data.append(row_dict)
-                progress_bar.progress((idx + 1) / len(df))
-            progress_bar.empty()
-    
-    analyzed_df = pd.DataFrame(st.session_state.analyzed_data)
-    
-    # Métricas principales
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Total de Iniciativas", len(analyzed_df))
-    
-    with col2:
-        avg_viability = analyzed_df['viabilidad'].mean()
-        st.metric("Viabilidad Promedio", f"{avg_viability:.1f}%")
-    
-    with col3:
-        high_impact = len(analyzed_df[analyzed_df['impacto'] >= 4])
-        st.metric("Alto Impacto", high_impact)
-    
-    with col4:
-        low_effort = len(analyzed_df[analyzed_df['esfuerzo'] <= 2])
-        st.metric("Bajo Esfuerzo", low_effort)
-    
-    # Tabs para diferentes vistas
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "💡 Iniciativas", "📈 Análisis", "📋 Informes"])
-    
-    with tab1:
-        col1, col2 = st.columns(2)
+        # URL de Google Sheets
+        sheet_url = st.text_input(
+            "URL de Google Sheets",
+            value="https://docs.google.com/spreadsheets/d/1G57SXlODM0XKtSIozprz9dqPJEqPTpExsk0whv4sxIc/edit",
+            help="Ingresa la URL del Google Sheets con las respuestas del formulario"
+        )
         
-        with col1:
-            # Matriz Esfuerzo-Impacto
-            fig_matrix = go.Figure()
-            
-            # Definir colores por cuadrante
-            colors = []
-            for _, row in analyzed_df.iterrows():
-                if row['impacto'] >= 3 and row['esfuerzo'] <= 3:
-                    colors.append('#00cc44')  # Quick wins
-                elif row['impacto'] >= 3 and row['esfuerzo'] > 3:
-                    colors.append('#ff9900')  # Proyectos estratégicos
-                elif row['impacto'] < 3 and row['esfuerzo'] <= 3:
-                    colors.append('#3366cc')  # Fill-ins
+        # Botón para cargar/actualizar datos
+        if st.button("🔄 Cargar/Actualizar Datos", type="primary"):
+            with st.spinner("Cargando datos desde Google Sheets..."):
+                df = load_data_from_sheets(sheet_url)
+                if df is not None:
+                    st.session_state.data = df
+                    st.session_state.last_update = datetime.now()
+                    st.success(f"✅ Datos cargados: {len(df)} iniciativas encontradas")
                 else:
-                    colors.append('#cc0000')  # Evitar
-            
-            fig_matrix.add_trace(go.Scatter(
-                x=analyzed_df['esfuerzo'],
-                y=analyzed_df['impacto'],
-                mode='markers+text',
-                marker=dict(size=15, color=colors),
-                text=analyzed_df['Título de la iniciativa'].str[:20] + '...',
-                textposition="top center",
-                textfont=dict(size=9),
-                hovertemplate='<b>%{text}</b><br>Esfuerzo: %{x}<br>Impacto: %{y}<extra></extra>'
-            ))
-            
-            # Añadir cuadrantes
-            fig_matrix.add_shape(type="line", x0=3, y0=0, x1=3, y1=5,
-                                line=dict(color="gray", width=1, dash="dash"))
-            fig_matrix.add_shape(type="line", x0=0, y0=3, x1=5, y1=3,
-                                line=dict(color="gray", width=1, dash="dash"))
-            
-            # Etiquetas de cuadrantes
-            fig_matrix.add_annotation(x=1.5, y=4.5, text="Quick Wins", showarrow=False,
-                                     font=dict(size=12, color="green"))
-            fig_matrix.add_annotation(x=4, y=4.5, text="Estratégicos", showarrow=False,
-                                     font=dict(size=12, color="orange"))
-            fig_matrix.add_annotation(x=1.5, y=1.5, text="Fill-ins", showarrow=False,
-                                     font=dict(size=12, color="blue"))
-            fig_matrix.add_annotation(x=4, y=1.5, text="Evitar", showarrow=False,
-                                     font=dict(size=12, color="red"))
-            
-            fig_matrix.update_layout(
-                title="Matriz Esfuerzo-Impacto",
-                xaxis_title="Esfuerzo →",
-                yaxis_title="Impacto →",
-                xaxis=dict(range=[0.5, 5.5]),
-                yaxis=dict(range=[0.5, 5.5]),
-                height=400
-            )
-            
-            st.plotly_chart(fig_matrix, use_container_width=True)
+                    st.error("❌ No se pudieron cargar los datos")
         
-        with col2:
-            # Distribución por categorías
-            category_counts = analyzed_df['categoria'].value_counts()
-            fig_pie = px.pie(values=category_counts.values, names=category_counts.index,
-                            title="Distribución por Categorías",
-                            color_discrete_map={
-                                'Tecnología': '#1f77b4',
-                                'Procesos': '#ff7f0e',
-                                'Cultura': '#2ca02c',
-                                'Producto': '#d62728'
-                            })
-            fig_pie.update_layout(height=400)
-            st.plotly_chart(fig_pie, use_container_width=True)
+        # Mostrar última actualización
+        if st.session_state.last_update:
+            st.info(f"📅 Última actualización: {st.session_state.last_update.strftime('%Y-%m-%d %H:%M')}")
         
-        # Timeline de iniciativas
-        st.subheader("📅 Timeline de Propuestas")
-        analyzed_df['Timestamp'] = pd.to_datetime(analyzed_df['Timestamp'])
-        
-        fig_timeline = px.scatter(analyzed_df, x='Timestamp', y='Departamento',
-                                 size='viabilidad', color='categoria',
-                                 hover_data=['Título de la iniciativa', 'viabilidad'],
-                                 title="Iniciativas por Departamento en el Tiempo")
-        fig_timeline.update_layout(height=300)
-        st.plotly_chart(fig_timeline, use_container_width=True)
-        
-        # Top iniciativas
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("🏆 Top 5 - Mayor Viabilidad")
-            top_viable = analyzed_df.nlargest(5, 'viabilidad')[['Título de la iniciativa', 'viabilidad', 'Departamento']]
-            st.dataframe(top_viable, hide_index=True)
-        
-        with col2:
-            st.subheader("⚡ Top 5 - Quick Wins")
-            quick_wins = analyzed_df[(analyzed_df['impacto'] >= 3) & (analyzed_df['esfuerzo'] <= 3)]
-            quick_wins = quick_wins.nlargest(5, 'viabilidad')[['Título de la iniciativa', 'impacto', 'esfuerzo']]
-            st.dataframe(quick_wins, hide_index=True)
-    
-    with tab2:
-        st.subheader("💡 Detalle de Iniciativas")
+        st.divider()
         
         # Filtros
-        col1, col2, col3 = st.columns(3)
+        st.header("🔍 Filtros")
         
-        with col1:
-            dept_filter = st.multiselect("Departamento", analyzed_df['Departamento'].unique())
+        if st.session_state.analyzed_data is not None:
+            df = st.session_state.analyzed_data
+            
+            # Filtro por categoría
+            categorias = ['Todas'] + sorted(df['categoria'].unique().tolist())
+            categoria_filtro = st.selectbox("Categoría", categorias)
+            
+            # Filtro por área
+            areas = ['Todas'] + sorted(df['area_proceso'].unique().tolist())
+            area_filtro = st.selectbox("Área/Proceso", areas)
+            
+            # Filtro por cuadrante
+            cuadrantes = ['Todos'] + sorted(df['cuadrante'].unique().tolist())
+            cuadrante_filtro = st.selectbox("Cuadrante", cuadrantes)
+            
+            # Filtro por puntuación
+            puntuacion_min = st.slider("Puntuación mínima", 0, 100, 0)
+    
+    # Contenido principal
+    if st.session_state.data is not None:
+        # Analizar datos si no han sido analizados
+        if st.session_state.analyzed_data is None:
+            if st.button("🤖 Analizar Iniciativas con IA", type="primary"):
+                st.session_state.analyzed_data = process_initiatives(st.session_state.data)
+                st.success("✅ Análisis completado")
         
-        with col2:
-            cat_filter = st.multiselect("Categoría", analyzed_df['categoria'].unique())
-        
-        with col3:
-            viab_filter = st.slider("Viabilidad mínima", 0, 100, 50)
-        
-        # Aplicar filtros
-        filtered_df = analyzed_df.copy()
-        if dept_filter:
-            filtered_df = filtered_df[filtered_df['Departamento'].isin(dept_filter)]
-        if cat_filter:
-            filtered_df = filtered_df[filtered_df['categoria'].isin(cat_filter)]
-        filtered_df = filtered_df[filtered_df['viabilidad'] >= viab_filter]
-        
-        # Mostrar iniciativas
-        for idx, row in filtered_df.iterrows():
-            with st.expander(f"{row['Título de la iniciativa']} - {row['Nombre']}"):
-                col1, col2, col3 = st.columns(3)
+        if st.session_state.analyzed_data is not None:
+            df = st.session_state.analyzed_data.copy()
+            
+            # Aplicar filtros
+            if 'categoria_filtro' in locals() and categoria_filtro != 'Todas':
+                df = df[df['categoria'] == categoria_filtro]
+            if 'area_filtro' in locals() and area_filtro != 'Todas':
+                df = df[df['area_proceso'] == area_filtro]
+            if 'cuadrante_filtro' in locals() and cuadrante_filtro != 'Todos':
+                df = df[df['cuadrante'] == cuadrante_filtro]
+            if 'puntuacion_min' in locals():
+                df = df[df['puntuacion_global'] >= puntuacion_min]
+            
+            # Tabs principales
+            tab1, tab2, tab3, tab4, tab5 = st.tabs([
+                "📊 Dashboard", "📋 Iniciativas", "📈 Matriz Esfuerzo-Impacto", 
+                "📑 Informes", "🔍 Análisis Detallado"
+            ])
+            
+            with tab1:
+                # Métricas principales
+                col1, col2, col3, col4 = st.columns(4)
                 
                 with col1:
-                    st.metric("Viabilidad", f"{row['viabilidad']}%")
-                    st.metric("Categoría", row['categoria'])
+                    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+                    st.metric("Total Iniciativas", len(df))
+                    st.markdown('</div>', unsafe_allow_html=True)
                 
                 with col2:
-                    st.metric("Impacto", f"{row['impacto']}/5")
-                    st.metric("Departamento", row['Departamento'])
+                    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+                    st.metric("Puntuación Promedio", f"{df['puntuacion_global'].mean():.1f}")
+                    st.markdown('</div>', unsafe_allow_html=True)
                 
                 with col3:
-                    st.metric("Esfuerzo", f"{row['esfuerzo']}/5")
-                    st.metric("Tiempo", row['Tiempo estimado'])
+                    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+                    quick_wins = len(df[df['cuadrante'] == 'Quick Wins'])
+                    st.metric("Quick Wins", quick_wins)
+                    st.markdown('</div>', unsafe_allow_html=True)
                 
-                st.markdown("**Descripción:**")
-                st.write(row['Descripción'])
+                with col4:
+                    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+                    high_impact = len(df[df['impacto'] >= 8])
+                    st.metric("Alto Impacto", high_impact)
+                    st.markdown('</div>', unsafe_allow_html=True)
                 
-                st.markdown("**Beneficios esperados:**")
-                st.write(row['Beneficios esperados'])
+                st.divider()
                 
-                st.markdown("**Recursos necesarios:**")
-                st.write(row['Recursos necesarios'])
-                
+                # Gráficos del dashboard
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    st.markdown("**🚨 Riesgos identificados:**")
-                    for risk in row['riesgos']:
-                        st.write(f"• {risk}")
+                    # Distribución por categorías
+                    fig_cat = px.pie(
+                        df, 
+                        names='categoria', 
+                        title='Distribución por Categorías',
+                        color_discrete_sequence=px.colors.qualitative.Set3
+                    )
+                    fig_cat.update_traces(textposition='inside', textinfo='percent+label')
+                    st.plotly_chart(fig_cat, use_container_width=True)
                 
                 with col2:
-                    st.markdown("**✅ Recomendaciones:**")
-                    for rec in row['recomendaciones']:
-                        st.write(f"• {rec}")
-    
-    with tab3:
-        st.subheader("📈 Análisis Detallado")
-        
-        # Análisis por departamento
-        dept_analysis = analyzed_df.groupby('Departamento').agg({
-            'viabilidad': 'mean',
-            'impacto': 'mean',
-            'esfuerzo': 'mean',
-            'Título de la iniciativa': 'count'
-        }).round(2)
-        dept_analysis.columns = ['Viabilidad Promedio', 'Impacto Promedio', 'Esfuerzo Promedio', 'Cantidad']
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            fig_dept = px.bar(dept_analysis.reset_index(), x='Departamento', y='Cantidad',
-                             title="Iniciativas por Departamento",
-                             color='Cantidad', color_continuous_scale='Blues')
-            st.plotly_chart(fig_dept, use_container_width=True)
-        
-        with col2:
-            fig_viab_dept = px.bar(dept_analysis.reset_index(), x='Departamento', y='Viabilidad Promedio',
-                                  title="Viabilidad Promedio por Departamento",
-                                  color='Viabilidad Promedio', color_continuous_scale='Greens')
-            st.plotly_chart(fig_viab_dept, use_container_width=True)
-        
-        # Correlación entre variables
-        st.subheader("🔍 Análisis de Correlaciones")
-        
-        # Convertir presupuesto a numérico
-        analyzed_df['Presupuesto_num'] = analyzed_df['Presupuesto estimado'].str.replace('$', '').str.replace(',', '').astype(float)
-        
-        correlation_data = analyzed_df[['viabilidad', 'impacto', 'esfuerzo', 'Presupuesto_num']]
-        
-        fig_corr = px.scatter_matrix(correlation_data,
-                                     dimensions=['viabilidad', 'impacto', 'esfuerzo', 'Presupuesto_num'],
-                                     title="Matriz de Correlación",
-                                     height=600)
-        st.plotly_chart(fig_corr, use_container_width=True)
-        
-        # Distribución de viabilidad
-        fig_hist = px.histogram(analyzed_df, x='viabilidad', nbins=20,
-                               title="Distribución de Puntajes de Viabilidad",
-                               labels={'viabilidad': 'Viabilidad (%)', 'count': 'Cantidad'})
-        fig_hist.update_traces(marker_color='lightblue', marker_line_color='darkblue', marker_line_width=1)
-        st.plotly_chart(fig_hist, use_container_width=True)
-    
-    with tab4:
-        st.subheader("📋 Generación de Informes")
-        
-        report_type = st.selectbox("Tipo de informe", 
-                                  ["Resumen Ejecutivo", "Informe Detallado", "Reporte Quick Wins", "Análisis por Departamento"])
-        
-        if st.button("📄 Generar Informe"):
-            with st.spinner("Generando informe..."):
-                time.sleep(2)  # Simular generación
+                    # Distribución por áreas
+                    area_counts = df['area_proceso'].value_counts()
+                    fig_area = px.bar(
+                        x=area_counts.values,
+                        y=area_counts.index,
+                        orientation='h',
+                        title='Iniciativas por Área',
+                        labels={'x': 'Cantidad', 'y': 'Área'},
+                        color=area_counts.values,
+                        color_continuous_scale='viridis'
+                    )
+                    st.plotly_chart(fig_area, use_container_width=True)
                 
-                if report_type == "Resumen Ejecutivo":
-                    st.markdown("### 📊 Resumen Ejecutivo - Iniciativas de Innovación")
-                    st.markdown(f"**Fecha:** {datetime.now().strftime('%Y-%m-%d')}")
-                    st.markdown("---")
-                    
-                    st.markdown(f"""
-                    **Resumen General:**
-                    - Total de iniciativas recibidas: {len(analyzed_df)}
-                    - Viabilidad promedio: {analyzed_df['viabilidad'].mean():.1f}%
-                    - Iniciativas de alto impacto: {len(analyzed_df[analyzed_df['impacto'] >= 4])}
-                    - Quick wins identificados: {len(analyzed_df[(analyzed_df['impacto'] >= 3) & (analyzed_df['esfuerzo'] <= 3)])}
-                    
-                    **Distribución por Categorías:**
-                    """)
-                    
-                    for cat, count in analyzed_df['categoria'].value_counts().items():
-                        st.markdown(f"- {cat}: {count} iniciativas ({count/len(analyzed_df)*100:.1f}%)")
-                    
-                    st.markdown("""
-                    **Recomendaciones Principales:**
-                    1. Priorizar las iniciativas identificadas como Quick Wins
-                    2. Formar equipos multidisciplinarios para proyectos estratégicos
-                    3. Asignar recursos a las iniciativas con viabilidad superior al 80%
-                    """)
-                    
-                    st.success("✅ Informe generado exitosamente")
+                # Timeline de iniciativas
+                st.subheader("📅 Timeline de Iniciativas")
+                df_timeline = df.copy()
+                df_timeline['fecha'] = df_timeline['timestamp'].dt.date
+                timeline_data = df_timeline.groupby('fecha').size().reset_index(name='cantidad')
                 
-                elif report_type == "Reporte Quick Wins":
-                    st.markdown("### ⚡ Reporte de Quick Wins")
-                    quick_wins_df = analyzed_df[(analyzed_df['impacto'] >= 3) & (analyzed_df['esfuerzo'] <= 3)]
-                    quick_wins_df = quick_wins_df.sort_values('viabilidad', ascending=False)
-                    
-                    for idx, row in quick_wins_df.head(10).iterrows():
-                        st.markdown(f"""
-                        **{idx+1}. {row['Título de la iniciativa']}**
-                        - Propuesto por: {row['Nombre']} ({row['Departamento']})
-                        - Viabilidad: {row['viabilidad']}%
-                        - Impacto: {row['impacto']}/5 | Esfuerzo: {row['esfuerzo']}/5
-                        - Presupuesto: {row['Presupuesto estimado']}
-                        - Tiempo: {row['Tiempo estimado']}
-                        ---
-                        """)
-        
-        # Exportar datos
-        st.subheader("💾 Exportar Datos")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            csv = analyzed_df.to_csv(index=False)
-            st.download_button(
-                label="📥 Descargar CSV completo",
-                data=csv,
-                file_name=f"iniciativas_innovacion_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv"
-            )
-        
-        with col2:
-            # Preparar datos para Excel (simplificado)
-            excel_data = analyzed_df[['Timestamp', 'Nombre', 'Departamento', 'Título de la iniciativa',
-                                     'viabilidad', 'impacto', 'esfuerzo', 'categoria']].copy()
+                fig_timeline = px.line(
+                    timeline_data,
+                    x='fecha',
+                    y='cantidad',
+                    title='Evolución de Iniciativas Propuestas',
+                    markers=True,
+                    line_shape='spline'
+                )
+                fig_timeline.update_layout(
+                    xaxis_title="Fecha",
+                    yaxis_title="Cantidad de Iniciativas",
+                    hovermode='x unified'
+                )
+                st.plotly_chart(fig_timeline, use_container_width=True)
+                
+                # Top iniciativas
+                st.subheader("🏆 Top Iniciativas por Puntuación")
+                top_initiatives = df.nlargest(5, 'puntuacion_global')[
+                    ['nombre_iniciativa', 'proponente', 'categoria', 'puntuacion_global', 'impacto', 'esfuerzo']
+                ]
+                
+                for idx, row in top_initiatives.iterrows():
+                    col1, col2, col3 = st.columns([3, 1, 1])
+                    with col1:
+                        st.markdown(f"**{row['nombre_iniciativa']}**")
+                        st.caption(f"Por: {row['proponente']} | Categoría: {row['categoria']}")
+                    with col2:
+                        st.metric("Puntuación", f"{row['puntuacion_global']:.0f}")
+                    with col3:
+                        impact_class = "high-impact" if row['impacto'] >= 8 else "medium-impact" if row['impacto'] >= 5 else "low-impact"
+                        st.markdown(f'<span class="status-badge {impact_class}">Impacto: {row["impacto"]:.0f}</span>', unsafe_allow_html=True)
             
-            csv_excel = excel_data.to_csv(index=False)
-            st.download_button(
-                label="📥 Descargar resumen",
-                data=csv_excel,
-                file_name=f"resumen_iniciativas_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv"
-            )
+            with tab2:
+                st.header("📋 Lista de Iniciativas")
+                
+                # Opciones de visualización
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    search_term = st.text_input("🔍 Buscar iniciativa", placeholder="Buscar por nombre o descripción...")
+                with col2:
+                    sort_by = st.selectbox("Ordenar por", ["Puntuación", "Fecha", "Impacto", "Esfuerzo"])
+                
+                # Filtrar por búsqueda
+                if search_term:
+                    mask = (
+                        df['nombre_iniciativa'].str.contains(search_term, case=False, na=False) |
+                        df['descripcion'].str.contains(search_term, case=False, na=False)
+                    )
+                    df_filtered = df[mask]
+                else:
+                    df_filtered = df
+                
+                # Ordenar
+                sort_mapping = {
+                    "Puntuación": "puntuacion_global",
+                    "Fecha": "timestamp",
+                    "Impacto": "impacto",
+                    "Esfuerzo": "esfuerzo"
+                }
+                df_filtered = df_filtered.sort_values(by=sort_mapping[sort_by], ascending=False)
+                
+                # Mostrar iniciativas
+                for idx, row in df_filtered.iterrows():
+                    with st.expander(f"{row['nombre_iniciativa']} - Puntuación: {row['puntuacion_global']:.0f}"):
+                        col1, col2 = st.columns([2, 1])
+                        
+                        with col1:
+                            st.markdown(f"**Proponente:** {row['proponente']}")
+                            st.markdown(f"**Área:** {row['area_proceso']}")
+                            st.markdown(f"**Categoría:** {row['categoria']}")
+                            st.markdown(f"**Fecha:** {row['timestamp'].strftime('%Y-%m-%d')}")
+                            
+                            st.markdown("**Descripción:**")
+                            st.write(row['descripcion'])
+                        
+                        with col2:
+                            # Métricas de evaluación
+                            st.markdown("**Evaluación:**")
+                            col_a, col_b = st.columns(2)
+                            with col_a:
+                                st.metric("Impacto", f"{row['impacto']:.0f}/10")
+                                st.metric("Viabilidad", f"{row['viabilidad_tecnica']:.0f}/10")
+                            with col_b:
+                                st.metric("Esfuerzo", f"{row['esfuerzo']:.0f}/10")
+                                st.metric("Alineación", f"{row['alineacion_estrategica']:.0f}/10")
+                            
+                            st.metric("Tiempo Est.", f"{row['tiempo_implementacion']} meses")
+                            
+                            # Cuadrante
+                            cuadrante_color = {
+                                "Quick Wins": "🟢",
+                                "Proyectos Estratégicos": "🔵",
+                                "Fill Ins": "🟡",
+                                "Difíciles de Justificar": "🔴"
+                            }
+                            st.markdown(f"**Cuadrante:** {cuadrante_color.get(row['cuadrante'], '')} {row['cuadrante']}")
+                        
+                        # Beneficios, riesgos y recomendaciones
+                        tab_ben, tab_risk, tab_rec = st.tabs(["✅ Beneficios", "⚠️ Riesgos", "💡 Recomendaciones"])
+                        
+                        with tab_ben:
+                            if isinstance(row['beneficios'], list):
+                                for beneficio in row['beneficios']:
+                                    st.write(f"• {beneficio}")
+                        
+                        with tab_risk:
+                            if isinstance(row['riesgos'], list):
+                                for riesgo in row['riesgos']:
+                                    st.write(f"• {riesgo}")
+                        
+                        with tab_rec:
+                            if isinstance(row['recomendaciones'], list):
+                                for rec in row['recomendaciones']:
+                                    st.write(f"• {rec}")
+                        
+                        # Información de contacto
+                        with st.container():
+                            st.divider()
+                            st.caption(f"📧 {row['correo']} | 📱 {row['telefono']}")
+            
+            with tab3:
+                st.header("📈 Matriz Esfuerzo-Impacto")
+                
+                # Crear matriz interactiva
+                fig_matrix = px.scatter(
+                    df,
+                    x='esfuerzo',
+                    y='impacto',
+                    color='cuadrante',
+                    size='puntuacion_global',
+                    hover_data=['nombre_iniciativa', 'proponente', 'categoria'],
+                    title='Matriz de Priorización: Esfuerzo vs Impacto',
+                    labels={'esfuerzo': 'Esfuerzo (1-10)', 'impacto': 'Impacto (1-10)'},
+                    color_discrete_map={
+                        "Quick Wins": "#10b981",
+                        "Proyectos Estratégicos": "#3b82f6",
+                        "Fill Ins": "#f59e0b",
+                        "Difíciles de Justificar": "#ef4444"
+                    }
+                )
+                
+                # Añadir líneas divisorias
+                fig_matrix.add_hline(y=7, line_dash="dash", line_color="gray", opacity=0.5)
+                fig_matrix.add_vline(x=4, line_dash="dash", line_color="gray", opacity=0.5)
+                
+                # Añadir anotaciones para los cuadrantes
+                fig_matrix.add_annotation(
+                    x=2, y=8.5,
+                    text="Quick Wins<br>Alto Impacto<br>Bajo Esfuerzo",
+                    showarrow=False,
+                    font=dict(size=12, color="green"),
+                    bgcolor="rgba(16, 185, 129, 0.1)",
+                    borderpad=4
+                )
+                fig_matrix.add_annotation(
+                    x=7, y=8.5,
+                    text="Proyectos<br>Estratégicos<br>Alto Impacto<br>Alto Esfuerzo",
+                    showarrow=False,
+                    font=dict(size=12, color="blue"),
+                    bgcolor="rgba(59, 130, 246, 0.1)",
+                    borderpad=4
+                )
+                fig_matrix.add_annotation(
+                    x=2, y=3.5,
+                    text="Fill Ins<br>Bajo Impacto<br>Bajo Esfuerzo",
+                    showarrow=False,
+                    font=dict(size=12, color="orange"),
+                    bgcolor="rgba(245, 158, 11, 0.1)",
+                    borderpad=4
+                )
+                fig_matrix.add_annotation(
+                    x=7, y=3.5,
+                    text="Difíciles de<br>Justificar<br>Bajo Impacto<br>Alto Esfuerzo",
+                    showarrow=False,
+                    font=dict(size=12, color="red"),
+                    bgcolor="rgba(239, 68, 68, 0.1)",
+                    borderpad=4
+                )
+                
+                fig_matrix.update_layout(
+                    xaxis=dict(range=[0, 11], dtick=1),
+                    yaxis=dict(range=[0, 11], dtick=1),
+                    height=600,
+                    hovermode='closest'
+                )
+                
+                st.plotly_chart(fig_matrix, use_container_width=True)
+                
+                # Resumen por cuadrante
+                st.subheader("📊 Resumen por Cuadrante")
+                
+                col1, col2, col3, col4 = st.columns(4)
+                
+                cuadrantes_info = {
+                    "Quick Wins": {"emoji": "🟢", "desc": "Implementar inmediatamente"},
+                    "Proyectos Estratégicos": {"emoji": "🔵", "desc": "Planificar cuidadosamente"},
+                    "Fill Ins": {"emoji": "🟡", "desc": "Implementar si hay recursos"},
+                    "Difíciles de Justificar": {"emoji": "🔴", "desc": "Reconsiderar o rechazar"}
+                }
+                
+                for col, (cuadrante, info) in zip([col1, col2, col3, col4], cuadrantes_info.items()):
+                    with col:
+                        df_cuadrante = df[df['cuadrante'] == cuadrante]
+                        st.markdown(f"### {info['emoji']} {cuadrante}")
+                        st.metric("Cantidad", len(df_cuadrante))
+                        st.caption(info['desc'])
+                        
+                        if len(df_cuadrante) > 0:
+                            st.markdown("**Top 3:**")
+                            for idx, row in df_cuadrante.nlargest(3, 'puntuacion_global').iterrows():
+                                st.write(f"• {row['nombre_iniciativa'][:30]}...")
+            
+            with tab4:
+                st.header("📑 Generación de Informes")
+                
+                # Selector de tipo de informe
+                tipo_informe = st.selectbox(
+                    "Selecciona el tipo de informe",
+                    ["Resumen Ejecutivo", "Análisis por Categorías", "Reporte de Viabilidad", "Informe Completo"]
+                )
+                
+                if st.button("📄 Generar Informe", type="primary"):
+                    with st.spinner("Generando informe..."):
+                        
+                        if tipo_informe == "Resumen Ejecutivo":
+                            st.markdown("## 📊 Resumen Ejecutivo de Iniciativas de Innovación")
+                            st.markdown(f"**Fecha:** {datetime.now().strftime('%Y-%m-%d')}")
+                            st.markdown(f"**Total de Iniciativas Analizadas:** {len(df)}")
+                            
+                            # Métricas clave
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("Puntuación Promedio", f"{df['puntuacion_global'].mean():.1f}/100")
+                            with col2:
+                                st.metric("Impacto Promedio", f"{df['impacto'].mean():.1f}/10")
+                            with col3:
+                                st.metric("Tiempo Promedio Implementación", f"{df['tiempo_implementacion'].mean():.1f} meses")
+                            
+                            # Top iniciativas
+                            st.markdown("### 🏆 Top 5 Iniciativas Recomendadas")
+                            top_5 = df.nlargest(5, 'puntuacion_global')
+                            for idx, row in top_5.iterrows():
+                                st.markdown(f"**{idx+1}. {row['nombre_iniciativa']}**")
+                                st.write(f"   - Proponente: {row['proponente']}")
+                                st.write(f"   - Puntuación: {row['puntuacion_global']:.0f}/100")
+                                st.write(f"   - Cuadrante: {row['cuadrante']}")
+                            
+                            # Distribución por categorías
+                            st.markdown("### 📈 Distribución por Categorías")
+                            cat_dist = df['categoria'].value_counts()
+                            for cat, count in cat_dist.items():
+                                st.write(f"- **{cat}:** {count} iniciativas ({count/len(df)*100:.1f}%)")
+                            
+                            # Recomendaciones generales
+                            st.markdown("### 💡 Recomendaciones Generales")
+                            quick_wins_count = len(df[df['cuadrante'] == 'Quick Wins'])
+                            st.write(f"1. Se identificaron **{quick_wins_count} Quick Wins** que deben ser implementados de inmediato.")
+                            st.write("2. Las iniciativas de **Tecnología** muestran el mayor potencial de impacto.")
+                            st.write("3. Se recomienda establecer un comité de seguimiento para las iniciativas estratégicas.")
+                        
+                        elif tipo_informe == "Análisis por Categorías":
+                            st.markdown("## 📊 Análisis Detallado por Categorías")
+                            
+                            for categoria in df['categoria'].unique():
+                                df_cat = df[df['categoria'] == categoria]
+                                
+                                st.markdown(f"### {categoria}")
+                                
+                                col1, col2, col3, col4 = st.columns(4)
+                                with col1:
+                                    st.metric("Iniciativas", len(df_cat))
+                                with col2:
+                                    st.metric("Puntuación Promedio", f"{df_cat['puntuacion_global'].mean():.1f}")
+                                with col3:
+                                    st.metric("Impacto Promedio", f"{df_cat['impacto'].mean():.1f}")
+                                with col4:
+                                    st.metric("Esfuerzo Promedio", f"{df_cat['esfuerzo'].mean():.1f}")
+                                
+                                # Top 3 de la categoría
+                                st.markdown("**Top 3 Iniciativas:**")
+                                for idx, row in df_cat.nlargest(3, 'puntuacion_global').iterrows():
+                                    st.write(f"• {row['nombre_iniciativa']} (Puntuación: {row['puntuacion_global']:.0f})")
+                                
+                                st.divider()
+                        
+                        elif tipo_informe == "Reporte de Viabilidad":
+                            st.markdown("## 🎯 Reporte de Viabilidad Técnica")
+                            
+                            # Iniciativas más viables
+                            st.markdown("### ✅ Iniciativas de Alta Viabilidad (≥8/10)")
+                            high_viability = df[df['viabilidad_tecnica'] >= 8].sort_values('viabilidad_tecnica', ascending=False)
+                            
+                            for idx, row in high_viability.iterrows():
+                                with st.expander(f"{row['nombre_iniciativa']} - Viabilidad: {row['viabilidad_tecnica']:.0f}/10"):
+                                    st.write(f"**Descripción:** {row['descripcion']}")
+                                    st.write(f"**Tiempo estimado:** {row['tiempo_implementacion']} meses")
+                                    st.write(f"**Impacto esperado:** {row['impacto']:.0f}/10")
+                            
+                            # Iniciativas que requieren análisis adicional
+                            st.markdown("### ⚠️ Iniciativas que Requieren Análisis Adicional (5-7/10)")
+                            medium_viability = df[(df['viabilidad_tecnica'] >= 5) & (df['viabilidad_tecnica'] < 8)]
+                            
+                            if len(medium_viability) > 0:
+                                st.write(f"Se identificaron {len(medium_viability)} iniciativas que requieren evaluación adicional:")
+                                for idx, row in medium_viability.iterrows():
+                                    st.write(f"• {row['nombre_iniciativa']} - Viabilidad: {row['viabilidad_tecnica']:.0f}/10")
+                        
+                        else:  # Informe Completo
+                            st.markdown("## 📋 Informe Completo de Iniciativas de Innovación")
+                            st.markdown(f"**Generado el:** {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+                            
+                            # Descargar como CSV
+                            csv = df.to_csv(index=False).encode('utf-8')
+                            st.download_button(
+                                label="📥 Descargar datos completos (CSV)",
+                                data=csv,
+                                file_name=f"iniciativas_innovacion_{datetime.now().strftime('%Y%m%d')}.csv",
+                                mime="text/csv"
+                            )
+                            
+                            # Vista de tabla completa
+                            st.dataframe(
+                                df[[
+                                    'nombre_iniciativa', 'proponente', 'categoria', 
+                                    'puntuacion_global', 'impacto', 'esfuerzo', 
+                                    'viabilidad_tecnica', 'cuadrante'
+                                ]].sort_values('puntuacion_global', ascending=False),
+                                use_container_width=True
+                            )
+            
+            with tab5:
+                st.header("🔍 Análisis Detallado de Iniciativa")
+                
+                # Selector de iniciativa
+                iniciativa_seleccionada = st.selectbox(
+                    "Selecciona una iniciativa para análisis detallado",
+                    df['nombre_iniciativa'].tolist()
+                )
+                
+                if iniciativa_seleccionada:
+                    row = df[df['nombre_iniciativa'] == iniciativa_seleccionada].iloc[0]
+                    
+                    # Información general
+                    col1, col2 = st.columns([2, 1])
+                    
+                    with col1:
+                        st.markdown(f"### {row['nombre_iniciativa']}")
+                        st.write(f"**Proponente:** {row['proponente']}")
+                        st.write(f"**Área:** {row['area_proceso']}")
+                        st.write(f"**Fecha de propuesta:** {row['timestamp'].strftime('%Y-%m-%d')}")
+                        
+                        st.markdown("**Descripción completa:**")
+                        st.info(row['descripcion'])
+                    
+                    with col2:
+                        # Gráfico de radar
+                        categories = ['Impacto', 'Viabilidad', 'Alineación', 'Innovación']
+                        values = [
+                            row['impacto'],
+                            row['viabilidad_tecnica'],
+                            row['alineacion_estrategica'],
+                            row['puntuacion_global']/10
+                        ]
+                        
+                        fig_radar = go.Figure(data=go.Scatterpolar(
+                            r=values,
+                            theta=categories,
+                            fill='toself',
+                            name='Evaluación'
+                        ))
+                        
+                        fig_radar.update_layout(
+                            polar=dict(
+                                radialaxis=dict(
+                                    visible=True,
+                                    range=[0, 10]
+                                )),
+                            showlegend=False,
+                            title="Evaluación Multidimensional"
+                        )
+                        
+                        st.plotly_chart(fig_radar, use_container_width=True)
+                    
+                    # Métricas detalladas
+                    st.markdown("### 📊 Métricas de Evaluación")
+                    
+                    col1, col2, col3, col4, col5 = st.columns(5)
+                    
+                    with col1:
+                        st.metric("Puntuación Global", f"{row['puntuacion_global']:.0f}/100")
+                    with col2:
+                        st.metric("Impacto", f"{row['impacto']:.0f}/10")
+                    with col3:
+                        st.metric("Esfuerzo", f"{row['esfuerzo']:.0f}/10")
+                    with col4:
+                        st.metric("Viabilidad", f"{row['viabilidad_tecnica']:.0f}/10")
+                    with col5:
+                        st.metric("Tiempo", f"{row['tiempo_implementacion']} meses")
+                    
+                    # Análisis detallado
+                    st.markdown("### 📝 Análisis Detallado")
+                    
+                    tab1, tab2, tab3, tab4 = st.tabs(["Beneficios", "Riesgos", "Recomendaciones", "Plan de Acción"])
+                    
+                    with tab1:
+                        st.markdown("#### ✅ Beneficios Esperados")
+                        if isinstance(row['beneficios'], list):
+                            for i, beneficio in enumerate(row['beneficios'], 1):
+                                st.success(f"{i}. {beneficio}")
+                    
+                    with tab2:
+                        st.markdown("#### ⚠️ Riesgos Identificados")
+                        if isinstance(row['riesgos'], list):
+                            for i, riesgo in enumerate(row['riesgos'], 1):
+                                st.warning(f"{i}. {riesgo}")
+                    
+                    with tab3:
+                        st.markdown("#### 💡 Recomendaciones")
+                        if isinstance(row['recomendaciones'], list):
+                            for i, rec in enumerate(row['recomendaciones'], 1):
+                                st.info(f"{i}. {rec}")
+                    
+                    with tab4:
+                        st.markdown("#### 📅 Plan de Acción Sugerido")
+                        
+                        # Generar plan de acción basado en el tiempo estimado
+                        meses = int(row['tiempo_implementacion'])
+                        fases = []
+                        
+                        if meses <= 3:
+                            fases = [
+                                ("Fase 1: Planificación", "Mes 1", "Definir alcance y recursos"),
+                                ("Fase 2: Implementación", "Mes 2", "Desarrollo y pruebas"),
+                                ("Fase 3: Lanzamiento", "Mes 3", "Despliegue y monitoreo")
+                            ]
+                        elif meses <= 6:
+                            fases = [
+                                ("Fase 1: Análisis", "Mes 1-2", "Estudio de viabilidad detallado"),
+                                ("Fase 2: Diseño", "Mes 2-3", "Diseño de la solución"),
+                                ("Fase 3: Desarrollo", "Mes 3-5", "Implementación"),
+                                ("Fase 4: Despliegue", "Mes 5-6", "Lanzamiento y seguimiento")
+                            ]
+                        else:
+                            fases = [
+                                ("Fase 1: Investigación", "Mes 1-2", "Análisis profundo"),
+                                ("Fase 2: Planificación", "Mes 3-4", "Plan detallado"),
+                                ("Fase 3: Desarrollo", f"Mes 5-{meses-2}", "Implementación iterativa"),
+                                ("Fase 4: Validación", f"Mes {meses-1}", "Pruebas y ajustes"),
+                                ("Fase 5: Lanzamiento", f"Mes {meses}", "Despliegue final")
+                            ]
+                        
+                        for fase, tiempo, descripcion in fases:
+                            st.write(f"**{fase}**")
+                            st.write(f"📅 {tiempo}: {descripcion}")
+                            st.divider()
+                        
+                        # Recursos estimados
+                        st.markdown("#### 💰 Recursos Estimados")
+                        if row['impacto'] >= 8:
+                            st.write("• **Prioridad:** Alta - Asignar recursos dedicados")
+                        elif row['impacto'] >= 5:
+                            st.write("• **Prioridad:** Media - Recursos compartidos")
+                        else:
+                            st.write("• **Prioridad:** Baja - Recursos mínimos")
+                        
+                        st.write(f"• **Equipo sugerido:** {2 if row['esfuerzo'] < 5 else 3 if row['esfuerzo'] < 8 else 5} personas")
+                        st.write(f"• **Área líder:** {row['area_proceso']}")
+                    
+                    # Información de contacto
+                    st.markdown("### 📞 Información de Contacto")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.write(f"📧 **Email:** {row['correo']}")
+                    with col2:
+                        st.write(f"📱 **Teléfono:** {row['telefono']}")
+    
+    else:
+        # Mensaje cuando no hay datos
+        st.info("👋 ¡Bienvenido al Sistema de Análisis de Iniciativas de Innovación!")
+        st.markdown("""
+        Para comenzar:
+        1. Ingresa la URL de tu Google Sheets en la barra lateral
+        2. Haz clic en **Cargar/Actualizar Datos**
+        3. Una vez cargados los datos, haz clic en **Analizar Iniciativas con IA**
+        
+        El sistema analizará automáticamente cada iniciativa y proporcionará:
+        - 📊 Dashboard con métricas clave
+        - 📈 Matriz de priorización Esfuerzo-Impacto
+        - 📋 Vista detallada de cada iniciativa
+        - 📑 Generación de informes personalizados
+        - 🔍 Análisis profundo con recomendaciones
+        """)
+        
+        # Mostrar arquitectura del sistema
+        with st.expander("🏗️ Arquitectura del Sistema"):
+            st.markdown("""
+            **Componentes principales:**
+            - **Google Sheets API**: Conexión en tiempo real con el formulario
+            - **OpenAI GPT-4**: Análisis inteligente de iniciativas
+            - **Streamlit**: Interfaz interactiva y visualizaciones
+            - **Plotly**: Gráficos dinámicos e interactivos
+            
+            **Flujo de datos:**
+            1. Las respuestas del Google Forms se almacenan en Sheets
+            2. La aplicación lee los datos mediante la API
+            3. Cada iniciativa se analiza con IA
+            4. Los resultados se visualizan en dashboards interactivos
+            """)
 
-else:
-    st.warning("⚠️ No hay datos disponibles. Configura la conexión a Google Sheets o activa los datos de demostración.")
-    
-    # Mostrar estructura esperada del formulario
-    st.info("""
-    ### 📝 Estructura del Google Forms sugerida:
-    
-    1. **Información del solicitante:**
-       - Nombre completo
-       - Correo electrónico
-       - Departamento
-    
-    2. **Detalles de la iniciativa:**
-       - Título de la iniciativa
-       - Descripción detallada
-       - Beneficios esperados
-       - Recursos necesarios
-       - Tiempo estimado de implementación
-       - Presupuesto estimado
-    
-    3. **Información adicional:**
-       - ¿Requiere colaboración con otros departamentos?
-       - ¿Existen riesgos identificados?
-       - Nivel de prioridad (Alta/Media/Baja)
-    """)
-
-# Footer
-st.markdown("---")
-st.markdown("💡 **Sistema de Análisis de Iniciativas de Innovación** | Desarrollado con Streamlit")
+if __name__ == "__main__":
+    main()
