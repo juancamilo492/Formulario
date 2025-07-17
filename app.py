@@ -30,7 +30,7 @@ st.markdown("""
     body {
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', sans-serif;
         color: #1a1a1a;
-        background-color: #f8fafc;
+        background-color: #e6f0fa;
     }
 
     /* Main header styling */
