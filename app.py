@@ -13,6 +13,7 @@ import time
 from typing import Dict, List, Tuple
 import re
 import ast
+import hashlib
 
 # Configuración de la página
 st.set_page_config(
@@ -125,14 +126,108 @@ def load_data_from_sheets(sheet_url):
             }
             df.rename(columns=column_mapping, inplace=True)
             
+            # Limpiar filas vacías o incompletas
+            df = df.dropna(how='all')  # Eliminar filas completamente vacías
+            df = df[df['nombre_iniciativa'].str.strip() != '']  # Eliminar filas con nombre vacío
+            
             # Convertir timestamp a datetime
             df['timestamp'] = pd.to_datetime(df['timestamp'], dayfirst=True, errors='coerce')
+            
+            # Generar un identificador único basado en nombre_iniciativa y timestamp
+            df['initiative_id'] = df.apply(
+                lambda row: hashlib.md5(f"{row['nombre_iniciativa']}_{row['timestamp']}".encode()).hexdigest(),
+                axis=1
+            )
             
             return df
         return None
     except Exception as e:
         st.error(f"Error al cargar datos: {str(e)}")
         return None
+
+# Función para cargar datos analizados desde Google Sheets
+def load_analyzed_data(sheet_url):
+    """Carga los datos analizados desde una hoja específica en Google Sheets"""
+    try:
+        client = connect_to_google_sheets()
+        if client is None:
+            return None
+        
+        sheet = client.open_by_url(sheet_url)
+        try:
+            worksheet = sheet.worksheet("Analyzed Initiatives")
+        except gspread.exceptions.WorksheetNotFound:
+            # Crear la hoja si no existe
+            worksheet = sheet.add_worksheet(title="Analyzed Initiatives", rows=1000, cols=20)
+            # Definir encabezados
+            headers = [
+                'initiative_id', 'timestamp', 'nombre_iniciativa', 'descripcion', 'proponente',
+                'telefono', 'correo', 'publico_interes', 'area_proceso', 'organizacion',
+                'areas_innovacion', 'impacto_sostenibilidad', 'impacto_viabilidad',
+                'impacto_diferenciacion', 'puntuacion_global', 'justificacion', 'impacto',
+                'esfuerzo', 'viabilidad_tecnica', 'alineacion_estrategica', 'tiempo_implementacion',
+                'categoria', 'beneficios', 'riesgos', 'recomendaciones', 'cuadrante'
+            ]
+            worksheet.update('A1', [headers])
+        
+        data = worksheet.get_all_records()
+        if data:
+            df = pd.DataFrame(data)
+            # Convertir listas almacenadas como strings a listas reales
+            for col in ['areas_innovacion', 'beneficios', 'riesgos', 'recomendaciones']:
+                df[col] = df[col].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) and x else [])
+            # Convertir timestamp a datetime
+            df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+            return df
+        return None
+    except Exception as e:
+        st.error(f"Error al cargar datos analizados: {str(e)}")
+        return None
+
+# Función para guardar datos analizados en Google Sheets
+def save_analyzed_data(sheet_url, analyzed_data):
+    """Guarda los datos analizados en la hoja 'Analyzed Initiatives'"""
+    try:
+        client = connect_to_google_sheets()
+        if client is None:
+            return
+        
+        sheet = client.open_by_url(sheet_url)
+        try:
+            worksheet = sheet.worksheet("Analyzed Initiatives")
+        except gspread.exceptions.WorksheetNotFound:
+            worksheet = sheet.add_worksheet(title="Analyzed Initiatives", rows=1000, cols=20)
+            headers = [
+                'initiative_id', 'timestamp', 'nombre_iniciativa', 'descripcion', 'proponente',
+                'telefono', 'correo', 'publico_interes', 'area_proceso', 'organizacion',
+                'areas_innovacion', 'impacto_sostenibilidad', 'impacto_viabilidad',
+                'impacto_diferenciacion', 'puntuacion_global', 'justificacion', 'impacto',
+                'esfuerzo', 'viabilidad_tecnica', 'alineacion_estrategica', 'tiempo_implementacion',
+                'categoria', 'beneficios', 'riesgos', 'recomendaciones', 'cuadrante'
+            ]
+            worksheet.update('A1', [headers])
+        
+        # Convertir DataFrame a lista de listas para guardar
+        data_to_save = analyzed_data.copy()
+        for col in ['areas_innovacion', 'beneficios', 'riesgos', 'recomendaciones']:
+            data_to_save[col] = data_to_save[col].apply(json.dumps)
+        data_to_save['timestamp'] = data_to_save['timestamp'].astype(str)
+        
+        # Obtener datos existentes
+        existing_data = worksheet.get_all_records()
+        existing_ids = set([row['initiative_id'] for row in existing_data]) if existing_data else set()
+        
+        # Filtrar solo los registros nuevos
+        new_data = data_to_save[~data_to_save['initiative_id'].isin(existing_ids)]
+        
+        if not new_data.empty:
+            # Convertir a lista de listas
+            values = new_data.values.tolist()
+            # Agregar al final de la hoja
+            worksheet.append_rows(values, value_input_option='RAW')
+            st.success(f"✅ Guardados {len(new_data)} nuevos análisis en Google Sheets")
+    except Exception as e:
+        st.error(f"Error al guardar datos analizados: {str(e)}")
 
 # Función para analizar iniciativas con OpenAI
 def analyze_initiative_with_ai(text):
@@ -174,9 +269,6 @@ def analyze_initiative_with_ai(text):
         
         # Remove markdown code fences and any leading/trailing whitespace
         content = re.sub(r'^```json\n|```$|\n\s*\n', '', content, flags=re.MULTILINE).strip()
-        
-        # Debugging: Log the raw response for inspection
-        st.write(f"Respuesta cruda de la API: {content}")
         
         # Attempt to parse JSON
         try:
@@ -252,31 +344,53 @@ def analyze_initiative_with_ai(text):
         }
 
 # Función para procesar todas las iniciativas
-def process_initiatives(data):
+def process_initiatives(data, sheet_url):
     resultados = []
     total = len(data)
-
-    for i, row in data.iterrows():
-        with st.spinner(f"Analizando iniciativa {i + 1} de {total}..."):
-            analysis = analyze_initiative_with_ai(row["descripcion"])
-            
-            if isinstance(analysis, dict):
-                result = {
-                    "timestamp": row["timestamp"],
-                    "nombre_iniciativa": row["nombre_iniciativa"],
-                    "descripcion": row["descripcion"],
-                    "proponente": row["proponente"],
-                    "telefono": row["telefono"],
-                    "correo": row["correo"],
-                    "publico_interes": row["publico_interes"],
-                    "area_proceso": row["area_proceso"],
-                    "organizacion": row["organizacion"],
-                    **analysis,  # Expandir el dict con resultados de IA
-                    "cuadrante": categorizar_cuadrante(analysis.get("impacto", 0), analysis.get("esfuerzo", 0))
-                }
-                resultados.append(result)
     
-    return pd.DataFrame(resultados)
+    # Cargar datos analizados previamente
+    analyzed_data = load_analyzed_data(sheet_url)
+    existing_ids = set(analyzed_data['initiative_id']) if analyzed_data is not None else set()
+    
+    for i, row in data.iterrows():
+        initiative_id = row['initiative_id']
+        
+        # Verificar si la iniciativa ya fue analizada
+        if initiative_id in existing_ids:
+            st.write(f"Iniciativa '{row['nombre_iniciativa']}' ya analizada, recuperando datos...")
+            # Recuperar datos existentes
+            existing_row = analyzed_data[analyzed_data['initiative_id'] == initiative_id].iloc[0]
+            result = existing_row.to_dict()
+            resultados.append(result)
+        else:
+            with st.spinner(f"Analizando iniciativa {i + 1} de {total}..."):
+                analysis = analyze_initiative_with_ai(row["descripcion"])
+                
+                if isinstance(analysis, dict):
+                    result = {
+                        "initiative_id": initiative_id,
+                        "timestamp": row["timestamp"],
+                        "nombre_iniciativa": row["nombre_iniciativa"],
+                        "descripcion": row["descripcion"],
+                        "proponente": row["proponente"],
+                        "telefono": row["telefono"],
+                        "correo": row["correo"],
+                        "publico_interes": row["publico_interes"],
+                        "area_proceso": row["area_proceso"],
+                        "organizacion": row["organizacion"],
+                        **analysis,
+                        "cuadrante": categorizar_cuadrante(analysis.get("impacto", 0), analysis.get("esfuerzo", 0))
+                    }
+                    resultados.append(result)
+    
+    # Convertir resultados a DataFrame
+    result_df = pd.DataFrame(resultados)
+    
+    # Guardar nuevos análisis en Google Sheets
+    if not result_df.empty:
+        save_analyzed_data(sheet_url, result_df)
+    
+    return result_df
 
 def categorizar_cuadrante(impacto: float, esfuerzo: float) -> str:
     """Categoriza la iniciativa en un cuadrante de la matriz esfuerzo-impacto"""
@@ -350,7 +464,7 @@ def main():
         if st.session_state.analyzed_data is None:
             if st.button("🤖 Analizar Iniciativas con IA", type="primary"):
                 with st.spinner("Analizando iniciativas con IA..."):
-                    st.session_state.analyzed_data = process_initiatives(st.session_state.data)
+                    st.session_state.analyzed_data = process_initiatives(st.session_state.data, sheet_url)
                     st.success("✅ Análisis completado")
         
         if st.session_state.analyzed_data is not None:
@@ -451,8 +565,8 @@ def main():
                 
                 # Top iniciativas
                 st.subheader("🏆 Top Iniciativas por Puntuación")
-                df['puntuacion_global'] = pd.to_numeric(df['puntuacion_global'], errors='coerce')  # Convierte a número
-                df_sorted = df.dropna(subset=['puntuacion_global'])  # Elimina filas donde no se pudo convertir
+                df['puntuacion_global'] = pd.to_numeric(df['puntuacion_global'], errors='coerce')
+                df_sorted = df.dropna(subset=['puntuacion_global'])
                 top_initiatives = df_sorted.nlargest(5, 'puntuacion_global')[
                     ['timestamp', 'nombre_iniciativa', 'descripcion', 'puntuacion_global', 'proponente', 'categoria', 'impacto']
                 ]
@@ -471,14 +585,12 @@ def main():
             with tab2:
                 st.header("📋 Lista de Iniciativas")
                 
-                # Opciones de visualización
                 col1, col2 = st.columns([3, 1])
                 with col1:
                     search_term = st.text_input("🔍 Buscar iniciativa", placeholder="Buscar por nombre o descripción...")
                 with col2:
                     sort_by = st.selectbox("Ordenar por", ["Puntuación", "Fecha", "Impacto", "Esfuerzo"])
                 
-                # Filtrar por búsqueda
                 if search_term:
                     mask = (
                         df['nombre_iniciativa'].str.contains(search_term, case=False, na=False) |
@@ -488,7 +600,6 @@ def main():
                 else:
                     df_filtered = df
                 
-                # Ordenar
                 sort_mapping = {
                     "Puntuación": "puntuacion_global",
                     "Fecha": "timestamp",
@@ -497,7 +608,6 @@ def main():
                 }
                 df_filtered = df_filtered.sort_values(by=sort_mapping[sort_by], ascending=False)
                 
-                # Mostrar iniciativas
                 for idx, row in df_filtered.iterrows():
                     with st.expander(f"{row['nombre_iniciativa']} - Puntuación: {row['puntuacion_global']:.0f}"):
                         col1, col2 = st.columns([2, 1])
@@ -512,7 +622,6 @@ def main():
                             st.write(row['descripcion'])
                         
                         with col2:
-                            # Métricas de evaluación
                             st.markdown("**Evaluación:**")
                             col_a, col_b = st.columns(2)
                             with col_a:
@@ -524,7 +633,6 @@ def main():
                             
                             st.metric("Tiempo Est.", f"{row['tiempo_implementacion']} meses")
                             
-                            # Cuadrante
                             cuadrante_color = {
                                 "Quick Wins": "🟢",
                                 "Proyectos Estratégicos": "🔵",
@@ -533,7 +641,6 @@ def main():
                             }
                             st.markdown(f"**Cuadrante:** {cuadrante_color.get(row['cuadrante'], '')} {row['cuadrante']}")
                         
-                        # Beneficios, riesgos y recomendaciones
                         tab_ben, tab_risk, tab_rec = st.tabs(["✅ Beneficios", "⚠️ Riesgos", "💡 Recomendaciones"])
                         
                         with tab_ben:
@@ -551,7 +658,6 @@ def main():
                                 for rec in row['recomendaciones']:
                                     st.write(f"• {rec}")
                         
-                        # Información de contacto
                         with st.container():
                             st.divider()
                             st.caption(f"📧 {row['correo']} | 📱 {row['telefono']}")
@@ -559,7 +665,6 @@ def main():
             with tab3:
                 st.header("📈 Matriz Esfuerzo-Impacto")
                 
-                # Crear matriz interactiva
                 fig_matrix = px.scatter(
                     df,
                     x='esfuerzo',
@@ -577,11 +682,9 @@ def main():
                     }
                 )
                 
-                # Añadir líneas divisorias
                 fig_matrix.add_hline(y=7, line_dash="dash", line_color="gray", opacity=0.5)
                 fig_matrix.add_vline(x=4, line_dash="dash", line_color="gray", opacity=0.5)
                 
-                # Añadir anotaciones para los cuadrantes
                 fig_matrix.add_annotation(
                     x=2, y=8.5,
                     text="Quick Wins<br>Alto Impacto<br>Bajo Esfuerzo",
@@ -624,7 +727,6 @@ def main():
                 
                 st.plotly_chart(fig_matrix, use_container_width=True)
                 
-                # Resumen por cuadrante
                 st.subheader("📊 Resumen por Cuadrante")
                 
                 col1, col2, col3, col4 = st.columns(4)
@@ -651,7 +753,6 @@ def main():
             with tab4:
                 st.header("📑 Generación de Informes")
                 
-                # Selector de tipo de informe
                 tipo_informe = st.selectbox(
                     "Selecciona el tipo de informe",
                     ["Resumen Ejecutivo", "Análisis por Categorías", "Reporte de Viabilidad", "Informe Completo"]
@@ -659,13 +760,11 @@ def main():
                 
                 if st.button("📄 Generar Informe", type="primary"):
                     with st.spinner("Generando informe..."):
-                        
                         if tipo_informe == "Resumen Ejecutivo":
                             st.markdown("## 📊 Resumen Ejecutivo de Iniciativas de Innovación")
                             st.markdown(f"**Fecha:** {datetime.now().strftime('%Y-%m-%d')}")
                             st.markdown(f"**Total de Iniciativas Analizadas:** {len(df)}")
                             
-                            # Métricas clave
                             col1, col2, col3 = st.columns(3)
                             with col1:
                                 st.metric("Puntuación Promedio", f"{df['puntuacion_global'].mean():.1f}/100")
@@ -674,7 +773,6 @@ def main():
                             with col3:
                                 st.metric("Tiempo Promedio Implementación", f"{df['tiempo_implementacion'].mean():.1f} meses")
                             
-                            # Top iniciativas
                             st.markdown("### 🏆 Top 5 Iniciativas Recomendadas")
                             top_5 = df.nlargest(5, 'puntuacion_global')
                             for idx, row in top_5.iterrows():
@@ -683,13 +781,11 @@ def main():
                                 st.write(f"   - Puntuación: {row['puntuacion_global']:.0f}/100")
                                 st.write(f"   - Cuadrante: {row['cuadrante']}")
                             
-                            # Distribución por categorías
                             st.markdown("### 📈 Distribución por Categorías")
                             cat_dist = df['categoria'].value_counts()
                             for cat, count in cat_dist.items():
                                 st.write(f"- **{cat}:** {count} iniciativas ({count/len(df)*100:.1f}%)")
                             
-                            # Recomendaciones generales
                             st.markdown("### 💡 Recomendaciones Generales")
                             quick_wins_count = len(df[df['cuadrante'] == 'Quick Wins'])
                             st.write(f"1. Se identificaron **{quick_wins_count} Quick Wins** que deben ser implementados de inmediato.")
@@ -714,7 +810,6 @@ def main():
                                 with col4:
                                     st.metric("Esfuerzo Promedio", f"{df_cat['esfuerzo'].mean():.1f}")
                                 
-                                # Top 3 de la categoría
                                 st.markdown("**Top 3 Iniciativas:**")
                                 for idx, row in df_cat.nlargest(3, 'puntuacion_global').iterrows():
                                     st.write(f"• {row['nombre_iniciativa']} (Puntuación: {row['puntuacion_global']:.0f})")
@@ -724,7 +819,6 @@ def main():
                         elif tipo_informe == "Reporte de Viabilidad":
                             st.markdown("## 🎯 Reporte de Viabilidad Técnica")
                             
-                            # Iniciativas más viables
                             st.markdown("### ✅ Iniciativas de Alta Viabilidad (≥8/10)")
                             high_viability = df[df['viabilidad_tecnica'] >= 8].sort_values('viabilidad_tecnica', ascending=False)
                             
@@ -734,7 +828,6 @@ def main():
                                     st.write(f"**Tiempo estimado:** {row['tiempo_implementacion']} meses")
                                     st.write(f"**Impacto esperado:** {row['impacto']:.0f}/10")
                             
-                            # Iniciativas que requieren análisis adicional
                             st.markdown("### ⚠️ Iniciativas que Requieren Análisis Adicional (5-7/10)")
                             medium_viability = df[(df['viabilidad_tecnica'] >= 5) & (df['viabilidad_tecnica'] < 8)]
                             
@@ -747,7 +840,6 @@ def main():
                             st.markdown("## 📋 Informe Completo de Iniciativas de Innovación")
                             st.markdown(f"**Generado el:** {datetime.now().strftime('%Y-%m-%d %H:%M')}")
                             
-                            # Descargar como CSV
                             csv = df.to_csv(index=False).encode('utf-8')
                             st.download_button(
                                 label="📥 Descargar datos completos (CSV)",
@@ -756,7 +848,6 @@ def main():
                                 mime="text/csv"
                             )
                             
-                            # Vista de tabla completa
                             st.dataframe(
                                 df[[
                                     'nombre_iniciativa', 'proponente', 'categoria', 
@@ -769,7 +860,6 @@ def main():
             with tab5:
                 st.header("🔍 Análisis Detallado de Iniciativa")
                 
-                # Selector de iniciativa
                 iniciativa_seleccionada = st.selectbox(
                     "Selecciona una iniciativa para análisis detallado",
                     df['nombre_iniciativa'].tolist()
@@ -778,7 +868,6 @@ def main():
                 if iniciativa_seleccionada:
                     row = df[df['nombre_iniciativa'] == iniciativa_seleccionada].iloc[0]
                     
-                    # Información general
                     col1, col2 = st.columns([2, 1])
                     
                     with col1:
@@ -791,7 +880,6 @@ def main():
                         st.info(row['descripcion'])
                     
                     with col2:
-                        # Gráfico de radar
                         categories = ['Impacto', 'Viabilidad', 'Alineación', 'Innovación']
                         values = [
                             row['impacto'],
@@ -819,7 +907,6 @@ def main():
                         
                         st.plotly_chart(fig_radar, use_container_width=True)
                     
-                    # Métricas detalladas
                     st.markdown("### 📊 Métricas de Evaluación")
                     
                     col1, col2, col3, col4, col5 = st.columns(5)
@@ -835,7 +922,6 @@ def main():
                     with col5:
                         st.metric("Tiempo", f"{row['tiempo_implementacion']} meses")
                     
-                    # Análisis detallado
                     st.markdown("### 📝 Análisis Detallado")
                     
                     tab1, tab2, tab3, tab4 = st.tabs(["Beneficios", "Riesgos", "Recomendaciones", "Plan de Acción"])
@@ -861,7 +947,6 @@ def main():
                     with tab4:
                         st.markdown("#### 📅 Plan de Acción Sugerido")
                         
-                        # Generar plan de acción basado en el tiempo estimado
                         meses = int(row['tiempo_implementacion'])
                         fases = []
                         
@@ -892,7 +977,6 @@ def main():
                             st.write(f"📅 {tiempo}: {descripcion}")
                             st.divider()
                         
-                        # Recursos estimados
                         st.markdown("#### 💰 Recursos Estimados")
                         if row['impacto'] >= 8:
                             st.write("• **Prioridad:** Alta - Asignar recursos dedicados")
@@ -904,7 +988,6 @@ def main():
                         st.write(f"• **Equipo sugerido:** {2 if row['esfuerzo'] < 5 else 3 if row['esfuerzo'] < 8 else 5} personas")
                         st.write(f"• **Área líder:** {row['area_proceso']}")
                     
-                    # Información de contacto
                     st.markdown("### 📞 Información de Contacto")
                     col1, col2 = st.columns(2)
                     with col1:
@@ -913,12 +996,11 @@ def main():
                         st.write(f"📱 **Teléfono:** {row['telefono']}")
     
     else:
-        # Mensaje cuando no hay datos
         st.info("👋 ¡Bienvenido al Sistema de Análisis de Iniciativas de Innovación!")
         st.markdown("""
         Para comenzar:
         1. Ingresa la URL de tu Google Sheets en la barra lateral
-        2. Haz clic en **Cargar/Actualizar Datos**F
+        2. Haz clic en **Cargar/Actualizar Datos**
         3. Una vez cargados los datos, haz clic en **Analizar Iniciativas con IA**
         
         El sistema analizará automáticamente cada iniciativa y proporcionará:
@@ -929,7 +1011,6 @@ def main():
         - 🔍 Análisis profundo con recomendaciones
         """)
         
-        # Mostrar arquitectura del sistema
         with st.expander("🏗️ Arquitectura del Sistema"):
             st.markdown("""
             **Componentes principales:**
