@@ -140,63 +140,55 @@ def analyze_initiative_with_ai(text):
     prompt = (
         f"Analiza la siguiente iniciativa:\n\n"
         f"{text}\n\n"
-        "Clasifica en máximo 3 áreas de innovación (producto, proceso, marketing, organizacional, experiencia, etc.), "
-        "asigna un porcentaje de impacto (0 a 100) en sostenibilidad, viabilidad y diferenciación, "
-        "y entrega una puntuación global del 0 al 100 con justificación breve."
+        "Devuelve el análisis como un JSON con esta estructura exacta:\n"
+        "{\n"
+        "  'areas_innovacion': ['producto', 'proceso'],\n"
+        "  'impacto_sostenibilidad': 70,\n"
+        "  'impacto_viabilidad': 80,\n"
+        "  'impacto_diferenciacion': 75,\n"
+        "  'puntuacion_global': 78,\n"
+        "  'justificacion': 'Texto corto explicando la puntuación'\n"
+        "}"
     )
 
     try:
         response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "Eres un experto en innovación empresarial y análisis de proyectos."},
+                {"role": "system", "content": "Eres un experto en innovación empresarial."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7,
-            max_tokens=1000
+            temperature=0.5,
+            max_tokens=700
         )
-
-        reply = response.choices[0].message.content.strip()
-        return reply
+        content = response.choices[0].message.content.strip()
+        analysis = ast.literal_eval(content)  # ⚠️ o usa json.loads si devuelves JSON puro
+        return analysis
 
     except Exception as e:
-        st.error(f"Error al analizar iniciativa con IA: {e}")
-        return ""
+        st.error(f"Error en análisis AI: {e}")
+        return {}
+
 
 # Función para procesar todas las iniciativas
-def process_initiatives(df: pd.DataFrame) -> pd.DataFrame:
-    """Procesa todas las iniciativas y añade análisis AI"""
-    analyzed_df = df.copy()
+def process_initiatives(data):
+    resultados = []
+    total = len(data)
+
+    for i, row in data.iterrows():
+        with st.spinner(f"Analizando iniciativa {i + 1} de {total}..."):
+            analysis = analyze_initiative_with_ai(row["iniciativa"])
+            
+            if isinstance(analysis, dict):
+                result = {
+                    "timestamp": row["timestamp"],
+                    "nombre": row["nombre"],
+                    "iniciativa": row["iniciativa"],
+                    **analysis  # expande el dict con resultados de IA
+                }
+                resultados.append(result)
     
-    # Añadir columnas para el análisis
-    analysis_columns = ['categoria', 'impacto', 'esfuerzo', 'viabilidad_tecnica', 
-                       'alineacion_estrategica', 'tiempo_implementacion', 'beneficios', 
-                       'riesgos', 'recomendaciones', 'puntuacion_global']
-    
-    for col in analysis_columns:
-        if col not in analyzed_df.columns:
-            analyzed_df[col] = None
-    
-    # Analizar cada iniciativa
-    progress_bar = st.progress(0)
-    for idx, row in analyzed_df.iterrows():
-        # Solo analizar si no ha sido analizada previamente
-        if pd.isna(row['puntuacion_global']):
-            with st.spinner(f"Analizando: {row['nombre_iniciativa']}..."):
-                analysis = analyze_initiative_with_ai(row.to_dict())
-                for key, value in analysis.items():
-                    analyzed_df.at[idx, key] = value
-        
-        progress_bar.progress((idx + 1) / len(analyzed_df))
-    
-    progress_bar.empty()
-    
-    # Calcular cuadrante en matriz esfuerzo-impacto
-    analyzed_df['cuadrante'] = analyzed_df.apply(
-        lambda x: categorizar_cuadrante(x['impacto'], x['esfuerzo']), axis=1
-    )
-    
-    return analyzed_df
+    return pd.DataFrame(resultados)
 
 def categorizar_cuadrante(impacto: float, esfuerzo: float) -> str:
     """Categoriza la iniciativa en un cuadrante de la matriz esfuerzo-impacto"""
