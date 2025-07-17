@@ -8,7 +8,6 @@ from plotly.subplots import make_subplots
 import gspread
 from google.oauth2.service_account import Credentials
 import openai
-from openai import OpenAI
 import json
 import time
 from typing import Dict, List, Tuple
