@@ -135,34 +135,18 @@ def load_data_from_sheets(sheet_url):
         return None
 
 # Función para analizar iniciativas con OpenAI
-def analyze_initiative_with_ai(initiative: Dict) -> Dict:
-    """Analiza una iniciativa usando OpenAI GPT"""
+def analyze_initiative_with_ai(text):
+    openai.api_key = st.secrets["OPENAI_API_KEY"]
+    prompt = (
+        f"Analiza la siguiente iniciativa:\n\n"
+        f"{text}\n\n"
+        "Clasifica en máximo 3 áreas de innovación (producto, proceso, marketing, organizacional, experiencia, etc.), "
+        "asigna un porcentaje de impacto (0 a 100) en sostenibilidad, viabilidad y diferenciación, "
+        "y entrega una puntuación global del 0 al 100 con justificación breve."
+    )
+
     try:
-        client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-        
-        prompt = f"""
-        Analiza la siguiente iniciativa de innovación y proporciona una evaluación estructurada:
-        
-        Nombre: {initiative['nombre_iniciativa']}
-        Descripción: {initiative['descripcion']}
-        Área: {initiative['area_proceso']}
-        
-        Por favor, evalúa y proporciona la siguiente información en formato JSON:
-        1. Categoría principal (Tecnología, Sostenibilidad, Procesos, Producto, Bienestar, Otros)
-        2. Nivel de impacto potencial (1-10)
-        3. Nivel de esfuerzo estimado (1-10)
-        4. Viabilidad técnica (1-10)
-        5. Alineación estratégica (1-10)
-        6. Tiempo estimado de implementación (en meses)
-        7. Principales beneficios (lista de 3-5 puntos)
-        8. Principales riesgos o desafíos (lista de 3-5 puntos)
-        9. Recomendaciones específicas (lista de 3-5 puntos)
-        10. Puntuación global (1-100)
-        
-        Responde SOLO con el JSON, sin texto adicional.
-        """
-        
-        response = client.chat.completions.create(
+        response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": "Eres un experto en innovación empresarial y análisis de proyectos."},
@@ -171,37 +155,13 @@ def analyze_initiative_with_ai(initiative: Dict) -> Dict:
             temperature=0.7,
             max_tokens=1000
         )
-        
-        # Parsear la respuesta JSON
-        analysis = json.loads(response.choices[0].message.content)
-        
-        return {
-            'categoria': analysis.get('categoria', 'Otros'),
-            'impacto': analysis.get('impacto', 5),
-            'esfuerzo': analysis.get('esfuerzo', 5),
-            'viabilidad_tecnica': analysis.get('viabilidad_tecnica', 5),
-            'alineacion_estrategica': analysis.get('alineacion_estrategica', 5),
-            'tiempo_implementacion': analysis.get('tiempo_implementacion', 6),
-            'beneficios': analysis.get('beneficios', []),
-            'riesgos': analysis.get('riesgos', []),
-            'recomendaciones': analysis.get('recomendaciones', []),
-            'puntuacion_global': analysis.get('puntuacion_global', 50)
-        }
+
+        reply = response.choices[0].message.content.strip()
+        return reply
+
     except Exception as e:
-        st.warning(f"Error en análisis AI para {initiative['nombre_iniciativa']}: {str(e)}")
-        # Retornar valores por defecto
-        return {
-            'categoria': 'Otros',
-            'impacto': 5,
-            'esfuerzo': 5,
-            'viabilidad_tecnica': 5,
-            'alineacion_estrategica': 5,
-            'tiempo_implementacion': 6,
-            'beneficios': ['Análisis pendiente'],
-            'riesgos': ['Análisis pendiente'],
-            'recomendaciones': ['Análisis pendiente'],
-            'puntuacion_global': 50
-        }
+        st.error(f"Error al analizar iniciativa con IA: {e}")
+        return ""
 
 # Función para procesar todas las iniciativas
 def process_initiatives(df: pd.DataFrame) -> pd.DataFrame:
