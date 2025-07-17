@@ -12,6 +12,7 @@ import json
 import time
 from typing import Dict, List, Tuple
 import re
+import ast
 
 # Configuración de la página
 st.set_page_config(
@@ -83,7 +84,6 @@ if 'last_update' not in st.session_state:
 def connect_to_google_sheets():
     """Conecta con Google Sheets usando las credenciales de servicio"""
     try:
-        # Las credenciales deberían estar configuradas en Streamlit secrets
         credentials = Credentials.from_service_account_info(
             st.secrets["gcp_service_account"],
             scopes=[
@@ -147,7 +147,16 @@ def analyze_initiative_with_ai(text):
         "  'impacto_viabilidad': 80,\n"
         "  'impacto_diferenciacion': 75,\n"
         "  'puntuacion_global': 78,\n"
-        "  'justificacion': 'Texto corto explicando la puntuación'\n"
+        "  'justificacion': 'Texto corto explicando la puntuación',\n"
+        "  'impacto': 8,\n"
+        "  'esfuerzo': 4,\n"
+        "  'viabilidad_tecnica': 8,\n"
+        "  'alineacion_estrategica': 7,\n"
+        "  'tiempo_implementacion': 6,\n"
+        "  'categoria': 'Tecnología',\n"
+        "  'beneficios': ['Beneficio 1', 'Beneficio 2'],\n"
+        "  'riesgos': ['Riesgo 1', 'Riesgo 2'],\n"
+        "  'recomendaciones': ['Recomendación 1', 'Recomendación 2']\n"
         "}"
     )
 
@@ -162,13 +171,29 @@ def analyze_initiative_with_ai(text):
             max_tokens=700
         )
         content = response.choices[0].message.content.strip()
-        analysis = ast.literal_eval(content)  # ⚠️ o usa json.loads si devuelves JSON puro
+        # Remove markdown code fences if present
+        content = re.sub(r'^```json\n|```$', '', content, flags=re.MULTILINE)
+        analysis = json.loads(content)  # Use json.loads for safer parsing
         return analysis
-
     except Exception as e:
         st.error(f"Error en análisis AI: {e}")
-        return {}
-
+        return {
+            'areas_innovacion': [],
+            'impacto_sostenibilidad': 0,
+            'impacto_viabilidad': 0,
+            'impacto_diferenciacion': 0,
+            'puntuacion_global': 0,
+            'justificacion': 'Error en el análisis',
+            'impacto': 0,
+            'esfuerzo': 0,
+            'viabilidad_tecnica': 0,
+            'alineacion_estrategica': 0,
+            'tiempo_implementacion': 0,
+            'categoria': 'Sin categoría',
+            'beneficios': [],
+            'riesgos': [],
+            'recomendaciones': []
+        }
 
 # Función para procesar todas las iniciativas
 def process_initiatives(data):
@@ -177,14 +202,21 @@ def process_initiatives(data):
 
     for i, row in data.iterrows():
         with st.spinner(f"Analizando iniciativa {i + 1} de {total}..."):
-            analysis = analyze_initiative_with_ai(row["iniciativa"])
+            analysis = analyze_initiative_with_ai(row["descripcion"])
             
             if isinstance(analysis, dict):
                 result = {
                     "timestamp": row["timestamp"],
-                    "nombre": row["nombre"],
-                    "iniciativa": row["iniciativa"],
-                    **analysis  # expande el dict con resultados de IA
+                    "nombre_iniciativa": row["nombre_iniciativa"],
+                    "descripcion": row["descripcion"],
+                    "proponente": row["proponente"],
+                    "telefono": row["telefono"],
+                    "correo": row["correo"],
+                    "publico_interes": row["publico_interes"],
+                    "area_proceso": row["area_proceso"],
+                    "organizacion": row["organizacion"],
+                    **analysis,  # Expandir el dict con resultados de IA
+                    "cuadrante": categorizar_cuadrante(analysis.get("impacto", 0), analysis.get("esfuerzo", 0))
                 }
                 resultados.append(result)
     
@@ -261,8 +293,9 @@ def main():
         # Analizar datos si no han sido analizados
         if st.session_state.analyzed_data is None:
             if st.button("🤖 Analizar Iniciativas con IA", type="primary"):
-                st.session_state.analyzed_data = process_initiatives(st.session_state.data)
-                st.success("✅ Análisis completado")
+                with st.spinner("Analizando iniciativas con IA..."):
+                    st.session_state.analyzed_data = process_initiatives(st.session_state.data)
+                    st.success("✅ Análisis completado")
         
         if st.session_state.analyzed_data is not None:
             df = st.session_state.analyzed_data.copy()
@@ -362,12 +395,11 @@ def main():
                 
                 # Top iniciativas
                 st.subheader("🏆 Top Iniciativas por Puntuación")
-                df['puntuacion_global'] = pd.to_numeric(df['puntuacion_global'], errors='coerce')  # convierte a número
-                df_sorted = df.dropna(subset=['puntuacion_global'])  # elimina filas donde no se pudo convertir
+                df['puntuacion_global'] = pd.to_numeric(df['puntuacion_global'], errors='coerce')  # Convierte a número
+                df_sorted = df.dropna(subset=['puntuacion_global'])  # Elimina filas donde no se pudo convertir
                 top_initiatives = df_sorted.nlargest(5, 'puntuacion_global')[
-                    ['timestamp', 'nombre', 'iniciativa', 'puntuacion_global']
+                    ['timestamp', 'nombre_iniciativa', 'descripcion', 'puntuacion_global', 'proponente', 'categoria', 'impacto']
                 ]
-
                 
                 for idx, row in top_initiatives.iterrows():
                     col1, col2, col3 = st.columns([3, 1, 1])
