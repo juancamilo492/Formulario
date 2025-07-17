@@ -10,6 +10,12 @@ import openai
 import json
 import time
 
+#Configuración de API KEY
+
+openai_key = st.secrets["OPENAI_API_KEY"]
+openai.api_key = openai_key
+
+
 # Configuración de la página
 st.set_page_config(
     page_title="Análisis de Iniciativas de Innovación",
@@ -43,9 +49,6 @@ st.markdown("---")
 # Sidebar para configuración
 with st.sidebar:
     st.header("⚙️ Configuración")
-    
-    # API Keys
-    openai_api_key = st.text_input("OpenAI API Key", type="password")
     
     # Google Sheets Configuration
     st.subheader("📊 Configuración Google Sheets")
