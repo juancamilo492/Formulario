@@ -127,7 +127,7 @@ def load_data_from_sheets(sheet_url):
             df.rename(columns=column_mapping, inplace=True)
             
             # Convertir timestamp a datetime
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df['timestamp'] = pd.to_datetime(df['timestamp'], dayfirst=True, errors='coerce')
             
             return df
         return None
