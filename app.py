@@ -244,8 +244,7 @@ def load_analyzed_data(sheet_url):
             headers = [
                 'initiative_id', 'timestamp', 'nombre_iniciativa', 'descripcion', 'proponente',
                 'telefono', 'correo', 'publico_interes', 'area_proceso', 'organizacion',
-                'areas_innovacion', 'impacto_sostenibilidad', 'impacto_viabilidad',
-                'impacto_diferenciacion', 'puntuacion_global', 'justificacion', 'impacto',
+                'impacto',
                 'esfuerzo', 'viabilidad_tecnica', 'alineacion_estrategica', 'tiempo_implementacion',
                 'categoria', 'beneficios', 'riesgos', 'recomendaciones', 'cuadrante'
             ]
@@ -257,7 +256,7 @@ def load_analyzed_data(sheet_url):
         
         df = pd.DataFrame(data)
         # Convertir listas almacenadas como strings a listas reales
-        for col in ['areas_innovacion', 'beneficios', 'riesgos', 'recomendaciones']:
+        for col in ['beneficios', 'riesgos', 'recomendaciones']:
             df[col] = df[col].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) and x else [])
         # Convertir timestamp a datetime
         df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
@@ -282,8 +281,7 @@ def save_analyzed_data(sheet_url, analyzed_data):
             headers = [
                 'initiative_id', 'timestamp', 'nombre_iniciativa', 'descripcion', 'proponente',
                 'telefono', 'correo', 'publico_interes', 'area_proceso', 'organizacion',
-                'areas_innovacion', 'impacto_sostenibilidad', 'impacto_viabilidad',
-                'impacto_diferenciacion', 'puntuacion_global', 'justificacion', 'impacto',
+                'impacto',
                 'esfuerzo', 'viabilidad_tecnica', 'alineacion_estrategica', 'tiempo_implementacion',
                 'categoria', 'beneficios', 'riesgos', 'recomendaciones', 'cuadrante'
             ]
@@ -291,7 +289,7 @@ def save_analyzed_data(sheet_url, analyzed_data):
         
         # Convertir DataFrame a lista de listas para guardar
         data_to_save = analyzed_data.copy()
-        for col in ['areas_innovacion', 'beneficios', 'riesgos', 'recomendaciones']:
+        for col in ['beneficios', 'riesgos', 'recomendaciones']:
             data_to_save[col] = data_to_save[col].apply(json.dumps)
         data_to_save['timestamp'] = data_to_save['timestamp'].astype(str)
         
@@ -319,12 +317,12 @@ def analyze_initiative_with_ai(text):
         f"{text}\n\n"
         "Devuelve el análisis como un JSON válido con esta estructura exacta, sin incluir markdown ni texto adicional fuera del JSON:\n"
         "{\n"
-        "  \"areas_innovacion\": [\"producto\", \"proceso\"],\n"
-        "  \"impacto_sostenibilidad\": 70,\n"
-        "  \"impacto_viabilidad\": 80,\n"
-        "  \"impacto_diferenciacion\": 75,\n"
-        "  \"puntuacion_global\": 78,\n"
-        "  \"justificacion\": \"Texto corto explicando la puntuación\",\n"
+        "  \\": [\"producto\", \"proceso\"],\n"
+        "  \\": 70,\n"
+        "  \\": 80,\n"
+        "  \\": 75,\n"
+        "  \\": 78,\n"
+        "  \\": \"Texto corto explicando la puntuación\",\n"
         "  \"impacto\": 8,\n"
         "  \"esfuerzo\": 4,\n"
         "  \"viabilidad_tecnica\": 8,\n"
@@ -359,12 +357,12 @@ def analyze_initiative_with_ai(text):
             st.error(f"Error al parsear JSON: {parse_err}")
             st.write(f"Contenido recibido: {content}")
             return {
-                "areas_innovacion": [],
-                "impacto_sostenibilidad": 0,
-                "impacto_viabilidad": 0,
-                "impacto_diferenciacion": 0,
-                "puntuacion_global": 0,
-                "justificacion": "Error en el análisis: respuesta no válida",
+                [],
+                0,
+                0,
+                0,
+                0,
+                "Error en el análisis: respuesta no válida",
                 "impacto": 0,
                 "esfuerzo": 0,
                 "viabilidad_tecnica": 0,
@@ -378,8 +376,6 @@ def analyze_initiative_with_ai(text):
         
         # Validate that the response contains all required keys
         required_keys = [
-            "areas_innovacion", "impacto_sostenibilidad", "impacto_viabilidad",
-            "impacto_diferenciacion", "puntuacion_global", "justificacion",
             "impacto", "esfuerzo", "viabilidad_tecnica", "alineacion_estrategica",
             "tiempo_implementacion", "categoria", "beneficios", "riesgos", "recomendaciones"
         ]
@@ -387,12 +383,12 @@ def analyze_initiative_with_ai(text):
             missing_keys = [key for key in required_keys if key not in analysis]
             st.error(f"Error: Faltan claves en la respuesta JSON: {missing_keys}")
             return {
-                "areas_innovacion": [],
-                "impacto_sostenibilidad": 0,
-                "impacto_viabilidad": 0,
-                "impacto_diferenciacion": 0,
-                "puntuacion_global": 0,
-                "justificacion": "Error en el análisis: estructura JSON incompleta",
+                [],
+                0,
+                0,
+                0,
+                0,
+                "Error en el análisis: estructura JSON incompleta",
                 "impacto": 0,
                 "esfuerzo": 0,
                 "viabilidad_tecnica": 0,
@@ -408,12 +404,12 @@ def analyze_initiative_with_ai(text):
     except Exception as e:
         st.error(f"Error en análisis AI: {str(e)}")
         return {
-            "areas_innovacion": [],
-            "impacto_sostenibilidad": 0,
-            "impacto_viabilidad": 0,
-            "impacto_diferenciacion": 0,
-            "puntuacion_global": 0,
-            "justificacion": f"Error en el análisis: {str(e)}",
+            [],
+            0,
+            0,
+            0,
+            0,
+            f"Error en el análisis: {str(e)}",
             "impacto": 0,
             "esfuerzo": 0,
             "viabilidad_tecnica": 0,
@@ -580,7 +576,7 @@ def main():
         if 'cuadrante_filtro' in locals() and cuadrante_filtro != 'Todos':
             df = df[df['cuadrante'] == cuadrante_filtro]
         if 'puntuacion_min' in locals():
-            df = df[df['puntuacion_global'] >= puntuacion_min]
+            df = df[df[] >= puntuacion_min]
         
         # Tabs principales
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -599,7 +595,7 @@ def main():
             
             with col2:
                 st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-                st.metric("Puntuación Promedio", f"{df['puntuacion_global'].mean():.1f}")
+                st.metric("Puntuación Promedio", f"{df[].mean():.1f}")
                 st.markdown('</div>', unsafe_allow_html=True)
             
             with col3:
@@ -668,10 +664,10 @@ def main():
             
             # Top iniciativas
             st.subheader("🏆 Top Iniciativas por Puntuación")
-            df['puntuacion_global'] = pd.to_numeric(df['puntuacion_global'], errors='coerce')
-            df_sorted = df.dropna(subset=['puntuacion_global'])
-            top_initiatives = df_sorted.nlargest(5, 'puntuacion_global')[
-                ['timestamp', 'nombre_iniciativa', 'descripcion', 'puntuacion_global', 'proponente', 'categoria', 'impacto']
+            df[] = pd.to_numeric(df[], errors='coerce')
+            df_sorted = df.dropna(subset=[])
+            top_initiatives = df_sorted.nlargest(5,)[
+                ['timestamp', 'nombre_iniciativa', 'descripcion', 'proponente', 'categoria', 'impacto']
             ]
             
             for idx, row in top_initiatives.iterrows():
@@ -680,7 +676,7 @@ def main():
                     st.markdown(f"**{row['nombre_iniciativa']}**")
                     st.caption(f"Por: {row['proponente']} | Categoría: {row['categoria']}")
                 with col2:
-                    st.metric("Puntuación", f"{row['puntuacion_global']:.0f}")
+                    st.metric("Puntuación", f"{row[]:.0f}")
                 with col3:
                     impact_class = "high-impact" if row['impacto'] >= 8 else "medium-impact" if row['impacto'] >= 5 else "low-impact"
                     st.markdown(f'<span class="status-badge {impact_class}">Impacto: {row["impacto"]:.0f}</span>', unsafe_allow_html=True)
@@ -704,15 +700,14 @@ def main():
                 df_filtered = df
             
             sort_mapping = {
-                "Puntuación": "puntuacion_global",
-                "Fecha": "timestamp",
+                "Puntuación": "Fecha": "timestamp",
                 "Impacto": "impacto",
                 "Esfuerzo": "esfuerzo"
             }
             df_filtered = df_filtered.sort_values(by=sort_mapping[sort_by], ascending=False)
             
             for idx, row in df_filtered.iterrows():
-                with st.expander(f"{row['nombre_iniciativa']} - Puntuación: {row['puntuacion_global']:.0f}"):
+                with st.expander(f"{row['nombre_iniciativa']} - Puntuación: {row[]:.0f}"):
                     col1, col2 = st.columns([2, 1])
                     
                     with col1:
@@ -773,8 +768,7 @@ def main():
                 x='esfuerzo',
                 y='impacto',
                 color='cuadrante',
-                size='puntuacion_global',
-                hover_data=['nombre_iniciativa', 'proponente', 'categoria'],
+                size=hover_data=['nombre_iniciativa', 'proponente', 'categoria'],
                 title='Matriz de Priorización: Esfuerzo vs Impacto',
                 labels={'esfuerzo': 'Esfuerzo (1-10)', 'impacto': 'Impacto (1-10)'},
                 color_discrete_map={
@@ -850,7 +844,7 @@ def main():
                     
                     if len(df_cuadrante) > 0:
                         st.markdown("**Top 3:**")
-                        for idx, row in df_cuadrante.nlargest(3, 'puntuacion_global').iterrows():
+                        for idx, row in df_cuadrante.nlargest(3,).iterrows():
                             st.write(f"• {row['nombre_iniciativa'][:30]}...")
         
         with tab4:
@@ -870,18 +864,18 @@ def main():
                         
                         col1, col2, col3 = st.columns(3)
                         with col1:
-                            st.metric("Puntuación Promedio", f"{df['puntuacion_global'].mean():.1f}/100")
+                            st.metric("Puntuación Promedio", f"{df[].mean():.1f}/100")
                         with col2:
                             st.metric("Impacto Promedio", f"{df['impacto'].mean():.1f}/10")
                         with col3:
                             st.metric("Tiempo Promedio Implementación", f"{df['tiempo_implementacion'].mean():.1f} meses")
                         
                         st.markdown("### 🏆 Top 5 Iniciativas Recomendadas")
-                        top_5 = df.nlargest(5, 'puntuacion_global')
+                        top_5 = df.nlargest(5,)
                         for idx, row in top_5.iterrows():
                             st.markdown(f"**{idx+1}. {row['nombre_iniciativa']}**")
                             st.write(f"   - Proponente: {row['proponente']}")
-                            st.write(f"   - Puntuación: {row['puntuacion_global']:.0f}/100")
+                            st.write(f"   - Puntuación: {row[]:.0f}/100")
                             st.write(f"   - Cuadrante: {row['cuadrante']}")
                         
                         st.markdown("### 📈 Distribución por Categorías")
@@ -907,15 +901,15 @@ def main():
                             with col1:
                                 st.metric("Iniciativas", len(df_cat))
                             with col2:
-                                st.metric("Puntuación Promedio", f"{df_cat['puntuacion_global'].mean():.1f}")
+                                st.metric("Puntuación Promedio", f"{df_cat[].mean():.1f}")
                             with col3:
                                 st.metric("Impacto Promedio", f"{df_cat['impacto'].mean():.1f}")
                             with col4:
                                 st.metric("Esfuerzo Promedio", f"{df_cat['esfuerzo'].mean():.1f}")
                             
                             st.markdown("**Top 3 Iniciativas:**")
-                            for idx, row in df_cat.nlargest(3, 'puntuacion_global').iterrows():
-                                st.write(f"• {row['nombre_iniciativa']} (Puntuación: {row['puntuacion_global']:.0f})")
+                            for idx, row in df_cat.nlargest(3,).iterrows():
+                                st.write(f"• {row['nombre_iniciativa']} (Puntuación: {row[]:.0f})")
                             
                             st.divider()
                     
@@ -954,9 +948,9 @@ def main():
                         st.dataframe(
                             df[[
                                 'nombre_iniciativa', 'proponente', 'categoria', 
-                                'puntuacion_global', 'impacto', 'esfuerzo', 
+                                'impacto', 'esfuerzo', 
                                 'viabilidad_tecnica', 'cuadrante'
-                            ]].sort_values('puntuacion_global', ascending=False),
+                            ]].sort_values(ascending=False),
                             use_container_width=True
                         )
         
@@ -988,7 +982,7 @@ def main():
                         row['impacto'],
                         row['viabilidad_tecnica'],
                         row['alineacion_estrategica'],
-                        row['puntuacion_global']/10
+                        row[]/10
                     ]
                     
                     fig_radar = go.Figure(data=go.Scatterpolar(
@@ -1016,7 +1010,7 @@ def main():
                 col1, col2, col3, col4, col5 = st.columns(5)
                 
                 with col1:
-                    st.metric("Puntuación Global", f"{row['puntuacion_global']:.0f}/100")
+                    st.metric("Puntuación Global", f"{row[]:.0f}/100")
                 with col2:
                     st.metric("Impacto", f"{row['impacto']:.0f}/10")
                 with col3:
