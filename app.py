@@ -1,41 +1,4 @@
-import streamlit as st
-import pandas as pd
-import plotly.graph_objects as go
-import plotly.express as px
-import seaborn as sns
-import matplotlib.pyplot as plt
-
-# Configuración inicial
-st.set_page_config(page_title="Panel de Evaluación de Ideas", layout="wide")
-st.title("📊 Análisis de Ideas Innovadoras")
-
-# Cargar datos desde Google Sheets (o DataFrame local para prueba)
-sheet_url = st.secrets["gsheets_url"]
-df = pd.read_csv(sheet_url)
-
-# Renombrar columnas reales a nombres esperados para evaluación
-column_map = {
-    "Valor estratégico": "valor_estrategico",
-    "Nivel de impacto": "impacto",
-    "Viabilidad técnica": "viabilidad",
-    "Costo-beneficio": "costobeneficio",
-    "Innovación / disrupción ": "innovacion",
-    "Escalabilidad / transversalidad ": "escalabilidad",
-    "Tiempo de implementación ": "tiempo"
-}
-df = df.rename(columns=column_map)
-
-# Columnas de criterios de evaluación
-criteria = [
-    "valor_estrategico", "impacto", "viabilidad", "costobeneficio",
-    "innovacion", "alineacion", "escalabilidad", "tiempo"
-]
-
-# Eliminar columnas que no existen
-criteria = [c for c in criteria if c in df.columns]
-
-# Calcular promedio por idea
-if criteria:
+df[criteria] = df[criteria].apply(pd.to_numeric, errors="coerce")
     df["promedio"] = df[criteria].mean(axis=1)
 
 # Filtros laterales
