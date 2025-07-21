@@ -823,13 +823,10 @@ if df is not None:
             avg_score = df_filtered['Puntuacion_Ponderada'].mean()
             top_area = df_filtered['Area'].value_counts().index[0] if len(df_filtered) > 0 else "N/A"
             
-            st.markdown(f"""
-            ### 📊 Resumen Ejecutivo
-            
-            **Período de análisis:** {datetime.now().strftime('%B %Y')}
-            
-            #### Métricas Clave:
-            """)
+            fecha_reporte = datetime.now().strftime('%B %Y')
+            st.markdown(f"### 📊 Resumen Ejecutivo")
+            st.markdown(f"**Período de análisis:** {fecha_reporte}")
+            st.markdown("#### Métricas Clave:")
             
             # Métricas en columnas
             met_col1, met_col2, met_col3, met_col4 = st.columns(4)
