@@ -18,6 +18,7 @@ from datetime import datetime
 import requests
 from io import BytesIO, StringIO
 import base64
+import bcrypt  # Added for password hashing
 
 # Importaciones para PDF
 from reportlab.lib.pagesizes import A4
@@ -477,14 +478,15 @@ def generate_pdf_report(df_filtered):
 # ==========================================
 
 def check_credentials(username, password):
-    """Verifica las credenciales del usuario contra st.secrets"""
+    """Verifica las credenciales del usuario contra st.secrets usando bcrypt"""
     try:
         users = st.secrets["users"]
         for user_key in users:
             user_data = users[user_key]
-            if (user_data["username"] == username and 
-                user_data["password"] == password):
-                return True
+            if user_data["username"] == username:
+                # Verificar contraseña hasheada
+                stored_hashed_password = user_data["password"].encode('utf-8')
+                return bcrypt.checkpw(password.encode('utf-8'), stored_hashed_password)
         return False
     except Exception as e:
         st.error(f"Error al verificar credenciales: {str(e)}")
