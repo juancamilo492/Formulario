@@ -1,467 +1,596 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-from datetime import datetime
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import numpy as np
+from datetime import datetime
 import requests
-from io import StringIO
+import io
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Análisis de Iniciativas de Innovación - Alico",
+    page_title="Dashboard de Iniciativas de Innovación - Alico",
     page_icon="💡",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# URL de tu Google Sheets
-SHEET_ID = "1yWHTveQlQEKi7fLdDxxKPLdEjGvD7PaTzAbRYvSBEp0"
-
-# Estilos CSS
+# CSS personalizado
 st.markdown("""
 <style>
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 20px;
-        border-radius: 15px;
-        color: white;
-        text-align: center;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-    }
-    .connection-status {
-        padding: 12px;
-        border-radius: 8px;
-        margin: 10px 0;
-        text-align: center;
+    .main-header {
+        font-size: 2.5rem;
         font-weight: bold;
+        color: #1f77b4;
+        text-align: center;
+        margin-bottom: 2rem;
     }
-    .success { background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
-    .error { background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
-    .warning { background-color: #fff3cd; border: 1px solid #ffeaa7; color: #856404; }
+    .metric-card {
+        background-color: #f0f2f6;
+        padding: 1rem;
+        border-radius: 10px;
+        border-left: 5px solid #1f77b4;
+    }
+    .priority-high { color: #ff4444; font-weight: bold; }
+    .priority-medium { color: #ffaa00; font-weight: bold; }
+    .priority-low { color: #00aa00; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
-# Funciones auxiliares
-def get_column_name(df, possible_names):
-    for name in possible_names:
-        if name in df.columns:
-            return name
-    return None
+# Título principal
+st.markdown('<h1 class="main-header">💡 Dashboard de Iniciativas de Innovación</h1>', unsafe_allow_html=True)
+st.markdown("### Análisis inteligente de propuestas para toma de decisiones estratégicas")
+st.markdown("---")
 
-def calculate_scores(df):
-    try:
-        if df.empty:
-            return df
-        
-        df = df.copy()
-        show_debug = st.session_state.get('show_debug', False)
-        
-        if show_debug:
-            st.write(f"Columnas: {list(df.columns)}")
-            st.write(f"Filas: {len(df)}")
-        
-        df.columns = df.columns.str.strip()
-        
-        column_mapping = {
-            'Valor estratégico': 'valor_estrategico',
-            'Nivel de impacto': 'nivel_impacto', 
-            'Viabilidad técnica': 'viabilidad_tecnica',
-            'Costo-beneficio': 'costo_beneficio',
-            'Innovación / disrupción': 'innovacion_disrupcion',
-            'Escalabilidad / transversalidad': 'escalabilidad_transversalidad',
-            'Tiempo de implementación': 'tiempo_implementacion'
-        }
-        
-        for col_original, col_clean in column_mapping.items():
-            if col_original in df.columns:
-                df[col_clean] = pd.to_numeric(df[col_original], errors='coerce').fillna(0)
-            else:
-                similar_cols = [c for c in df.columns if col_original.lower().replace(' ', '') in c.lower().replace(' ', '')]
-                if similar_cols:
-                    df[col_clean] = pd.to_numeric(df[similar_cols[0]], errors='coerce').fillna(0)
-                else:
-                    df[col_clean] = 0
-        
-        df['Puntuación Total'] = (
-            df['valor_estrategico'] + df['nivel_impacto'] + 
-            df['viabilidad_tecnica'] + df['costo_beneficio'] + 
-            df['innovacion_disrupcion'] + df['escalabilidad_transversalidad']
-        )
-        
-        df['Facilidad Implementación'] = 6 - df['tiempo_implementacion']
-        
-        def classify_initiative(row):
-            impact = row['nivel_impacto']
-            ease = row['Facilidad Implementación']
-            
-            if impact >= 4 and ease >= 4:
-                return 'Quick Win'
-            elif impact >= 4 and ease < 4:
-                return 'Estratégica'
-            elif impact < 4 and ease >= 4:
-                return 'Relleno'
-            else:
-                return 'Baja Prioridad'
-        
-        df['Clasificación'] = df.apply(classify_initiative, axis=1)
-        df['Ranking'] = df['Puntuación Total'].rank(method='dense', ascending=False).astype(int)
-        
-        # Mapear columnas de texto
-        area_col = get_column_name(df, ['Selecciona el área o proceso al cual perteneces', 'Área', 'Area'])
-        df['Área'] = df[area_col].astype(str).str.strip() if area_col else 'Sin especificar'
-        
-        name_col = get_column_name(df, ['Nombre de la idea o iniciativa', 'Iniciativa', 'Idea'])
-        df['Nombre_Iniciativa'] = df[name_col].astype(str).str.strip() if name_col else df.index.map(lambda x: f'Iniciativa {x+1}')
-        
-        author_col = get_column_name(df, ['Nombre completo', 'Nombre', 'Autor'])
-        df['Nombre_Completo'] = df[author_col].astype(str).str.strip() if author_col else 'Sin especificar'
-        
-        return df
-        
-    except Exception as e:
-        st.error(f"Error en calculate_scores: {e}")
-        return pd.DataFrame()
+# Configuración de conexión
+st.sidebar.header("⚙️ Configuración")
+connection_type = st.sidebar.selectbox(
+    "Tipo de conexión:",
+    ["Google Sheets (URL pública)", "Upload manual", "Google Sheets API"]
+)
 
+# Función para cargar datos
 @st.cache_data(ttl=300)
-def load_google_sheets_data():
-    urls_to_try = [
-        f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0",
-        f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
+def load_data_from_sheets(sheet_url=None):
+    """Carga datos desde Google Sheets"""
+    if connection_type == "Google Sheets (URL pública)":
+        # Extraer ID del sheet desde la URL
+        if sheet_url and "spreadsheets/d/" in sheet_url:
+            sheet_id = sheet_url.split("/spreadsheets/d/")[1].split("/")[0]
+            csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+            
+            try:
+                response = requests.get(csv_url)
+                response.raise_for_status()
+                df = pd.read_csv(io.StringIO(response.text))
+                return process_dataframe(df)
+            except Exception as e:
+                st.error(f"Error al cargar desde Google Sheets: {str(e)}")
+                return pd.DataFrame()
+    
+    return pd.DataFrame()
+
+def process_dataframe(df):
+    """Procesa y limpia el DataFrame"""
+    if df.empty:
+        return df
+    
+    # Limpiar nombres de columnas
+    df.columns = df.columns.str.strip()
+    
+    # Filtrar filas vacías
+    df = df.dropna(subset=['Nombre completo', 'Nombre de la idea o iniciativa'], how='all')
+    
+    # Columnas numéricas (escala 0-5)
+    numeric_cols = [
+        'Valor estratégico', 'Nivel de impacto', 'Viabilidad técnica',
+        'Costo-beneficio', 'Innovación / disrupción', 
+        'Escalabilidad / transversalidad', 'Tiempo de implementación'
     ]
     
-    for i, csv_url in enumerate(urls_to_try):
-        try:
-            headers = {'User-Agent': 'Mozilla/5.0 (compatible)'}
-            response = requests.get(csv_url, headers=headers, timeout=15)
-            response.raise_for_status()
-            
-            if len(response.text.strip()) > 10:
-                df = pd.read_csv(StringIO(response.text))
-                if len(df) > 0:
-                    return df, True, f"Conectado exitosamente (método {i+1})"
-        except Exception:
-            continue
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            # Asegurar que esté en el rango 0-5
+            df[col] = df[col].clip(0, 5)
     
-    return pd.DataFrame(), False, "No se pudo conectar a Google Sheets"
+    return df
 
-def load_demo_data():
-    np.random.seed(42)
-    areas = ["Tecnología", "Operaciones", "Finanzas", "Marketing", "RRHH"]
+def calculate_derived_metrics(df):
+    """Calcula métricas derivadas para análisis"""
+    if df.empty:
+        return df
+        
+    df = df.copy()
     
-    data = []
-    for i in range(15):
-        data.append({
-            'Nombre completo': f'Usuario {i+1}',
-            'Selecciona el área o proceso al cual perteneces': np.random.choice(areas),
-            'Nombre de la idea o iniciativa': f'Iniciativa Demo {i+1}',
-            'Valor estratégico': np.random.randint(1, 6),
-            'Nivel de impacto': np.random.randint(1, 6),
-            'Viabilidad técnica': np.random.randint(1, 6),
-            'Costo-beneficio': np.random.randint(1, 6),
-            'Innovación / disrupción': np.random.randint(1, 6),
-            'Escalabilidad / transversalidad': np.random.randint(1, 6),
-            'Tiempo de implementación': np.random.randint(1, 6)
-        })
-    
-    return pd.DataFrame(data)
-
-# Interfaz de usuario
-with st.sidebar:
-    st.header("⚙️ Configuración")
-    
-    data_source = st.radio(
-        "📊 Fuente de datos:",
-        ["🔗 Google Sheets", "📁 Archivo CSV", "🧪 Demo"],
+    # Score de prioridad ponderado (escala 0-5)
+    df['score_prioridad'] = (
+        df['Valor estratégico'] * 0.25 +
+        df['Nivel de impacto'] * 0.25 +
+        df['Viabilidad técnica'] * 0.20 +
+        df['Costo-beneficio'] * 0.15 +
+        df['Innovación / disrupción'] * 0.10 +
+        df['Escalabilidad / transversalidad'] * 0.05
     )
     
-    if data_source == "📁 Archivo CSV":
-        uploaded_file = st.file_uploader("Selecciona CSV", type=['csv'])
+    # Facilidad de implementación (viabilidad técnica + inversión del tiempo)
+    df['facilidad_implementacion'] = (df['Viabilidad técnica'] + (5 - df['Tiempo de implementación'])) / 2
     
-    if data_source == "🔗 Google Sheets":
-        if st.button("🔄 Actualizar"):
-            st.cache_data.clear()
-            st.rerun()
+    # Potencial de impacto (impacto + escalabilidad + innovación)
+    df['potencial_impacto'] = (df['Nivel de impacto'] + df['Escalabilidad / transversalidad'] + df['Innovación / disrupción']) / 3
     
-    st.markdown("---")
+    # Categorización por prioridad
+    df['categoria_prioridad'] = pd.cut(
+        df['score_prioridad'], 
+        bins=[0, 2, 3.5, 5], 
+        labels=['Baja', 'Media', 'Alta'],
+        include_lowest=True
+    )
     
-    min_score_filter = st.slider("Puntuación mínima", 0, 30, 0)
-    show_debug = st.checkbox("🔧 Debug", value=False)
-    show_zeros = st.checkbox("Incluir sin evaluar", value=True)
-    
-    st.session_state['show_debug'] = show_debug
+    return df
 
-# Título
-st.markdown("""
-<div style='text-align: center; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); 
-           padding: 2rem; border-radius: 15px; margin-bottom: 2rem;'>
-    <h1 style='color: white; margin: 0;'>💡 Análisis de Iniciativas de Innovación</h1>
-    <p style='color: #f8f9fa; margin: 0.5rem 0 0 0; font-size: 1.2rem;'>Dashboard Ejecutivo - Alico</p>
-</div>
-""", unsafe_allow_html=True)
-
-# Cargar datos
-if data_source == "🔗 Google Sheets":
-    df_raw, success, message = load_google_sheets_data()
-    if success:
-        st.markdown(f'<div class="connection-status success">✅ {message}</div>', unsafe_allow_html=True)
+# Carga de datos
+if connection_type == "Google Sheets (URL pública)":
+    sheet_url = st.sidebar.text_input(
+        "URL del Google Sheet:", 
+        value="https://docs.google.com/spreadsheets/d/1yWHTveQlQEKi7fLdDxxKPLdEjGvD7PaTzAbRYvSBEp0/edit?usp=sharing"
+    )
+    if st.sidebar.button("🔄 Actualizar datos"):
+        st.cache_data.clear()
+    df = load_data_from_sheets(sheet_url)
+    
+elif connection_type == "Upload manual":
+    uploaded_file = st.sidebar.file_uploader(
+        "Cargar archivo Excel/CSV", 
+        type=['xlsx', 'csv']
+    )
+    if uploaded_file:
+        if uploaded_file.name.endswith('.csv'):
+            df = pd.read_csv(uploaded_file)
+        else:
+            df = pd.read_excel(uploaded_file)
+        df = process_dataframe(df)
     else:
-        st.markdown(f'<div class="connection-status error">❌ {message}</div>', unsafe_allow_html=True)
-        df_raw = load_demo_data()
-elif data_source == "📁 Archivo CSV":
-    if 'uploaded_file' in locals() and uploaded_file:
-        df_raw = pd.read_csv(uploaded_file)
-        st.markdown('<div class="connection-status success">✅ CSV cargado</div>', unsafe_allow_html=True)
-    else:
-        df_raw = load_demo_data()
-        st.markdown('<div class="connection-status warning">⬆️ Sube un CSV</div>', unsafe_allow_html=True)
-else:
-    df_raw = load_demo_data()
-    st.markdown('<div class="connection-status warning">🧪 Datos demo</div>', unsafe_allow_html=True)
+        df = pd.DataFrame()
+        
+else:  # Google Sheets API
+    st.sidebar.info("📝 Requiere configuración de credenciales de Google Cloud")
+    df = pd.DataFrame()
 
-if df_raw.empty:
-    st.error("No hay datos disponibles")
+# Verificar si hay datos
+if df.empty:
+    st.warning("⚠️ No hay datos disponibles. Por favor configura la fuente de datos en el panel lateral.")
     st.stop()
 
 # Procesar datos
-df = calculate_scores(df_raw)
+df = calculate_derived_metrics(df)
 
-if not show_zeros:
-    df = df[df['Puntuación Total'] > 0]
-df = df[df['Puntuación Total'] >= min_score_filter]
+# SIDEBAR - Filtros
+st.sidebar.markdown("---")
+st.sidebar.header("🔍 Filtros")
 
-if df.empty:
-    st.warning("No hay datos con los filtros seleccionados")
+# Filtro por área
+areas_disponibles = ['Todas'] + list(df['Selecciona el área o proceso al cual perteneces'].dropna().unique())
+area_seleccionada = st.sidebar.selectbox("Filtrar por área:", areas_disponibles)
+
+# Filtro por rol
+roles_disponibles = ['Todos'] + list(df['Rol o relación con Alico'].dropna().unique())
+rol_seleccionado = st.sidebar.selectbox("Filtrar por rol:", roles_disponibles)
+
+# Filtro por rango de prioridad
+min_prioridad, max_prioridad = st.sidebar.slider(
+    "Rango de score de prioridad:",
+    min_value=0.0,
+    max_value=5.0,
+    value=(0.0, 5.0),
+    step=0.1
+)
+
+# Aplicar filtros
+df_filtrado = df.copy()
+
+if area_seleccionada != 'Todas':
+    df_filtrado = df_filtrado[df_filtrado['Selecciona el área o proceso al cual perteneces'] == area_seleccionada]
+
+if rol_seleccionado != 'Todos':
+    df_filtrado = df_filtrado[df_filtrado['Rol o relación con Alico'] == rol_seleccionado]
+
+df_filtrado = df_filtrado[
+    (df_filtrado['score_prioridad'] >= min_prioridad) & 
+    (df_filtrado['score_prioridad'] <= max_prioridad)
+]
+
+# Verificar datos filtrados
+if df_filtrado.empty:
+    st.warning("⚠️ No hay datos que coincidan con los filtros seleccionados.")
     st.stop()
 
-# Métricas principales
-col1, col2, col3, col4, col5 = st.columns(5)
+# DASHBOARD PRINCIPAL
+col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    st.markdown(f'<div class="metric-card"><h2 style="margin:0; color: white;">{len(df)}</h2><p style="margin:0; color: #f8f9fa;">Total</p></div>', unsafe_allow_html=True)
+    st.metric(
+        label="📊 Total Iniciativas", 
+        value=len(df_filtrado),
+        delta=f"de {len(df)} totales"
+    )
 
 with col2:
-    quick_wins = len(df[df['Clasificación'] == 'Quick Win'])
-    st.markdown(f'<div class="metric-card"><h2 style="margin:0; color: white;">{quick_wins}</h2><p style="margin:0; color: #f8f9fa;">Quick Wins</p></div>', unsafe_allow_html=True)
+    avg_priority = df_filtrado['score_prioridad'].mean()
+    st.metric(
+        label="⭐ Prioridad Promedio", 
+        value=f"{avg_priority:.2f}/5",
+        delta=f"{avg_priority:.1f}"
+    )
 
 with col3:
-    avg_score = df['Puntuación Total'].mean()
-    st.markdown(f'<div class="metric-card"><h2 style="margin:0; color: white;">{avg_score:.1f}</h2><p style="margin:0; color: #f8f9fa;">Promedio</p></div>', unsafe_allow_html=True)
+    high_priority = len(df_filtrado[df_filtrado['categoria_prioridad'] == 'Alta'])
+    st.metric(
+        label="🚀 Alta Prioridad", 
+        value=high_priority,
+        delta=f"{high_priority/len(df_filtrado)*100:.1f}% del total"
+    )
 
 with col4:
-    high_impact = len(df[df['nivel_impacto'] >= 4])
-    st.markdown(f'<div class="metric-card"><h2 style="margin:0; color: white;">{high_impact}</h2><p style="margin:0; color: #f8f9fa;">Alto Impacto</p></div>', unsafe_allow_html=True)
+    avg_feasibility = df_filtrado['facilidad_implementacion'].mean()
+    st.metric(
+        label="⚡ Facilidad Implementación", 
+        value=f"{avg_feasibility:.2f}/5",
+        delta=f"{avg_feasibility:.1f}"
+    )
 
-with col5:
-    strategic = len(df[df['Clasificación'] == 'Estratégica'])
-    st.markdown(f'<div class="metric-card"><h2 style="margin:0; color: white;">{strategic}</h2><p style="margin:0; color: #f8f9fa;">Estratégicas</p></div>', unsafe_allow_html=True)
+st.markdown("---")
 
-# Tabs
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "💡 Iniciativas", "📈 Análisis", "📋 Reportes"])
-
-color_map = {
-    'Quick Win': '#28a745',
-    'Estratégica': '#ffc107', 
-    'Relleno': '#17a2b8',
-    'Baja Prioridad': '#dc3545'
-}
+# TABS PRINCIPALES
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📈 Matriz Esfuerzo-Impacto", 
+    "📊 Análisis de Portafolio", 
+    "🏆 Rankings", 
+    "📋 Detalle de Iniciativas",
+    "📈 Análisis Comparativo"
+])
 
 with tab1:
-    col1, col2 = st.columns(2)
+    st.header("📈 Matriz Esfuerzo vs Impacto")
+    st.markdown("*Visualización para priorizar iniciativas basada en impacto potencial vs facilidad de implementación*")
+    
+    col1, col2 = st.columns([3, 1])
     
     with col1:
         # Matriz Esfuerzo-Impacto
-        fig_matrix = go.Figure()
-        
-        for classification in df['Clasificación'].unique():
-            subset = df[df['Clasificación'] == classification]
-            fig_matrix.add_trace(go.Scatter(
-                x=subset['Facilidad Implementación'],
-                y=subset['nivel_impacto'],
-                mode='markers',
-                marker=dict(
-                    size=subset['Puntuación Total'] / 1.5,
-                    color=color_map.get(classification, '#666'),
-                    line=dict(width=2, color='white'),
-                    opacity=0.8
-                ),
-                name=classification,
-                text=subset['Nombre_Iniciativa'].str[:25] + '...',
-                hovertemplate='<b>%{text}</b><br>Impacto: %{y}<br>Facilidad: %{x}<extra></extra>'
-            ))
-        
-        fig_matrix.add_hline(y=3.5, line_dash="dash", line_color="gray", opacity=0.5)
-        fig_matrix.add_vline(x=3.5, line_dash="dash", line_color="gray", opacity=0.5)
-        
-        fig_matrix.update_layout(
-            title="🎯 Matriz Facilidad vs Impacto",
-            xaxis_title="Facilidad →",
-            yaxis_title="Impacto →",
-            height=500
+        fig = px.scatter(
+            df_filtrado,
+            x='facilidad_implementacion',
+            y='potencial_impacto',
+            size='score_prioridad',
+            color='categoria_prioridad',
+            hover_data=['Nombre de la idea o iniciativa', 'Selecciona el área o proceso al cual perteneces'],
+            title="Matriz Esfuerzo vs Impacto",
+            labels={
+                'facilidad_implementacion': 'Facilidad de Implementación (0-5)',
+                'potencial_impacto': 'Potencial de Impacto (0-5)',
+                'categoria_prioridad': 'Prioridad'
+            },
+            color_discrete_map={
+                'Baja': '#ff9999',
+                'Media': '#ffcc99', 
+                'Alta': '#99ff99'
+            }
         )
         
-        st.plotly_chart(fig_matrix, use_container_width=True)
+        # Añadir líneas de referencia
+        fig.add_hline(y=2.5, line_dash="dash", line_color="gray", opacity=0.5)
+        fig.add_vline(x=2.5, line_dash="dash", line_color="gray", opacity=0.5)
+        
+        # Añadir anotaciones de cuadrantes
+        fig.add_annotation(x=1.25, y=4.5, text="Alto Impacto<br>Difícil Implementación", showarrow=False, opacity=0.6)
+        fig.add_annotation(x=4.5, y=4.5, text="GANADORES<br>RÁPIDOS", showarrow=False, opacity=0.8, bgcolor="lightgreen")
+        fig.add_annotation(x=1.25, y=1.25, text="Bajo Impacto<br>Difícil Implementación", showarrow=False, opacity=0.6)
+        fig.add_annotation(x=4.5, y=1.25, text="Bajo Impacto<br>Fácil Implementación", showarrow=False, opacity=0.6)
+        
+        fig.update_layout(height=600, width=800)
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        st.markdown("### 🎯 Recomendaciones")
+        
+        # Identificar ganadores rápidos
+        ganadores_rapidos = df_filtrado[
+            (df_filtrado['facilidad_implementacion'] >= 3.5) & 
+            (df_filtrado['potencial_impacto'] >= 3.5)
+        ]
+        
+        if not ganadores_rapidos.empty:
+            st.success("**🚀 Ganadores Rápidos:**")
+            for _, row in ganadores_rapidos.iterrows():
+                st.write(f"• {row['Nombre de la idea o iniciativa']}")
+        
+        # Proyectos de alto impacto pero difíciles
+        alto_impacto = df_filtrado[
+            (df_filtrado['facilidad_implementacion'] < 3.5) & 
+            (df_filtrado['potencial_impacto'] >= 3.5)
+        ]
+        
+        if not alto_impacto.empty:
+            st.warning("**⚡ Alto Impacto - Planificar:**")
+            for _, row in alto_impacto.iterrows():
+                st.write(f"• {row['Nombre de la idea o iniciativa']}")
+
+with tab2:
+    st.header("📊 Análisis de Portafolio")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Distribución por categoría de prioridad
+        priority_counts = df_filtrado['categoria_prioridad'].value_counts()
+        
+        fig_pie = px.pie(
+            values=priority_counts.values,
+            names=priority_counts.index,
+            title="Distribución por Prioridad",
+            color_discrete_map={
+                'Baja': '#ff9999',
+                'Media': '#ffcc99', 
+                'Alta': '#99ff99'
+            }
+        )
+        st.plotly_chart(fig_pie, use_container_width=True)
     
     with col2:
         # Distribución por área
-        area_analysis = df.groupby('Área').agg({
-            'Puntuación Total': ['mean', 'count'],
-            'Clasificación': lambda x: (x == 'Quick Win').sum()
-        }).round(1)
-        
-        area_analysis.columns = ['Promedio', 'Total', 'Quick Wins']
-        area_analysis = area_analysis.reset_index()
-        
-        fig_areas = px.bar(
-            area_analysis,
-            x='Total',
-            y='Área',
-            color='Promedio',
-            text='Quick Wins',
-            title="📊 Iniciativas por Área"
-        )
-        
-        st.plotly_chart(fig_areas, use_container_width=True)
-
-with tab2:
-    st.subheader("🔍 Explorar Iniciativas")
-    
-    # Filtros
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        area_filter = st.multiselect("🏢 Áreas", df['Área'].unique())
-    
-    with col2:
-        classification_filter = st.multiselect("🎯 Clasificación", df['Clasificación'].unique())
-    
-    with col3:
-        sort_by = st.selectbox("🔢 Ordenar por", ['Ranking', 'Puntuación Total', 'nivel_impacto'])
-    
-    # Aplicar filtros
-    filtered_df = df.copy()
-    if area_filter:
-        filtered_df = filtered_df[filtered_df['Área'].isin(area_filter)]
-    if classification_filter:
-        filtered_df = filtered_df[filtered_df['Clasificación'].isin(classification_filter)]
-    
-    filtered_df = filtered_df.sort_values(sort_by, ascending=False)
-    
-    st.info(f"Mostrando {len(filtered_df)} de {len(df)} iniciativas")
-    
-    # Mostrar iniciativas
-    for idx, row in filtered_df.head(10).iterrows():
-        with st.expander(f"#{row['Ranking']} - {row['Nombre_Iniciativa'][:50]}... ({row['Clasificación']})"):
-            col1, col2 = st.columns(2)
+        if 'Selecciona el área o proceso al cual perteneces' in df_filtrado.columns:
+            area_counts = df_filtrado['Selecciona el área o proceso al cual perteneces'].value_counts()
             
-            with col1:
-                st.markdown(f"**👤 Propuesto por:** {row['Nombre_Completo']}")
-                st.markdown(f"**🏢 Área:** {row['Área']}")
-                st.markdown(f"**🎯 Clasificación:** {row['Clasificación']}")
-            
-            with col2:
-                st.metric("🏆 Ranking", f"#{row['Ranking']}")
-                st.metric("📊 Puntuación", f"{row['Puntuación Total']:.0f}/30")
-                st.metric("📈 Impacto", f"{row['nivel_impacto']}/5")
+            fig_bar = px.bar(
+                x=area_counts.index,
+                y=area_counts.values,
+                title="Iniciativas por Área",
+                labels={'x': 'Área', 'y': 'Número de Iniciativas'}
+            )
+            fig_bar.update_layout(xaxis_tickangle=-45)
+            st.plotly_chart(fig_bar, use_container_width=True)
+    
+    # Radar chart de métricas promedio
+    st.subheader("📡 Perfil Promedio de Iniciativas")
+    
+    metrics = [
+        'Valor estratégico', 'Nivel de impacto', 'Viabilidad técnica',
+        'Costo-beneficio', 'Innovación / disrupción', 
+        'Escalabilidad / transversalidad'
+    ]
+    
+    avg_values = [df_filtrado[metric].mean() for metric in metrics]
+    
+    fig_radar = go.Figure()
+    
+    fig_radar.add_trace(go.Scatterpolar(
+        r=avg_values,
+        theta=metrics,
+        fill='toself',
+        name='Promedio Iniciativas'
+    ))
+    
+    fig_radar.update_layout(
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, 5]
+            )),
+        showlegend=True,
+        title="Perfil Promedio de Métricas (Escala 0-5)"
+    )
+    
+    st.plotly_chart(fig_radar, use_container_width=True)
 
 with tab3:
-    st.subheader("📈 Análisis Estadístico")
+    st.header("🏆 Rankings de Iniciativas")
     
-    # Correlaciones
-    numeric_cols = ['valor_estrategico', 'nivel_impacto', 'viabilidad_tecnica', 'costo_beneficio']
-    corr_matrix = df[numeric_cols].corr()
-    
-    fig_corr = px.imshow(
-        corr_matrix,
-        text_auto=".2f",
-        title="🔗 Correlaciones",
-        color_continuous_scale='RdBu'
+    # Selector de criterio de ranking
+    criterio_ranking = st.selectbox(
+        "Seleccionar criterio de ranking:",
+        ["Score de Prioridad", "Potencial de Impacto", "Facilidad de Implementación", 
+         "Valor Estratégico", "Nivel de Impacto", "Innovación"]
     )
-    st.plotly_chart(fig_corr, use_container_width=True)
     
-    # Distribución de puntuaciones
-    fig_hist = px.histogram(
-        df, 
-        x='Puntuación Total',
-        color='Clasificación',
-        color_discrete_map=color_map,
-        title="📈 Distribución de Puntuaciones"
+    # Mapear criterio a columna
+    criterio_map = {
+        "Score de Prioridad": "score_prioridad",
+        "Potencial de Impacto": "potencial_impacto", 
+        "Facilidad de Implementación": "facilidad_implementacion",
+        "Valor Estratégico": "Valor estratégico",
+        "Nivel de Impacto": "Nivel de impacto",
+        "Innovación": "Innovación / disrupción"
+    }
+    
+    columna_criterio = criterio_map[criterio_ranking]
+    
+    # Crear ranking
+    df_ranking = df_filtrado.sort_values(columna_criterio, ascending=False).reset_index(drop=True)
+    df_ranking['Posición'] = range(1, len(df_ranking) + 1)
+    
+    # Mostrar top 10
+    st.subheader(f"🥇 Top 10 - {criterio_ranking}")
+    
+    cols_display = [
+        'Posición', 'Nombre de la idea o iniciativa', 
+        'Selecciona el área o proceso al cual perteneces',
+        columna_criterio, 'categoria_prioridad'
+    ]
+    
+    df_display = df_ranking[cols_display].head(10).copy()
+    df_display[columna_criterio] = df_display[columna_criterio].round(2)
+    
+    # Formatear la tabla
+    def color_priority(val):
+        if val == 'Alta':
+            return 'background-color: #90EE90'
+        elif val == 'Media':
+            return 'background-color: #FFE4B5'
+        else:
+            return 'background-color: #FFB6C1'
+    
+    styled_df = df_display.style.applymap(color_priority, subset=['categoria_prioridad'])
+    st.dataframe(styled_df, use_container_width=True)
+    
+    # Gráfico de barras del ranking
+    top_10 = df_ranking.head(10)
+    fig_ranking = px.bar(
+        top_10,
+        x=columna_criterio,
+        y='Nombre de la idea o iniciativa',
+        orientation='h',
+        title=f"Top 10 Iniciativas por {criterio_ranking}",
+        color=columna_criterio,
+        color_continuous_scale='Viridis'
     )
-    st.plotly_chart(fig_hist, use_container_width=True)
+    fig_ranking.update_layout(height=500, yaxis={'categoryorder':'total ascending'})
+    st.plotly_chart(fig_ranking, use_container_width=True)
 
 with tab4:
-    st.subheader("🏆 Rankings y Reportes")
+    st.header("📋 Detalle de Iniciativas")
     
-    col1, col2 = st.columns(2)
+    # Selector de iniciativa
+    iniciativas_disponibles = df_filtrado['Nombre de la idea o iniciativa'].tolist()
+    iniciativa_seleccionada = st.selectbox("Seleccionar iniciativa:", iniciativas_disponibles)
     
-    with col1:
-        st.markdown("### 🥇 Top 10 Iniciativas")
-        top_initiatives = df.nlargest(10, 'Puntuación Total')[
-            ['Ranking', 'Nombre_Iniciativa', 'Área', 'Puntuación Total', 'Clasificación']
-        ].reset_index(drop=True)
+    if iniciativa_seleccionada:
+        # Obtener datos de la iniciativa
+        iniciativa_data = df_filtrado[df_filtrado['Nombre de la idea o iniciativa'] == iniciativa_seleccionada].iloc[0]
         
-        st.dataframe(top_initiatives, hide_index=True)
-    
-    with col2:
-        st.markdown("### 🚀 Quick Wins")
-        quick_wins_df = df[df['Clasificación'] == 'Quick Win'].nlargest(5, 'Puntuación Total')[
-            ['Ranking', 'Nombre_Iniciativa', 'Área', 'Puntuación Total']
-        ].reset_index(drop=True)
+        # Layout en columnas
+        col1, col2 = st.columns([2, 1])
         
-        if not quick_wins_df.empty:
-            st.dataframe(quick_wins_df, hide_index=True)
-        else:
-            st.info("No hay Quick Wins disponibles")
-    
-    # Resumen ejecutivo
-    st.markdown("### 📋 Resumen Ejecutivo")
-    
-    total_initiatives = len(df)
-    avg_score = df['Puntuación Total'].mean()
-    top_area = df['Área'].value_counts().index[0] if len(df) > 0 else "N/A"
-    classification_counts = df['Clasificación'].value_counts()
-    
-    st.markdown(f"""
-    **Resumen General ({datetime.now().strftime('%Y-%m-%d')})**
-    
-    - Total de iniciativas: {total_initiatives}
-    - Puntuación promedio: {avg_score:.1f}/30 ({(avg_score/30)*100:.1f}%)
-    - Área más activa: {top_area}
-    - Quick Wins: {classification_counts.get('Quick Win', 0)}
-    - Iniciativas estratégicas: {classification_counts.get('Estratégica', 0)}
-    """)
-    
-    # Exportar datos
-    st.markdown("### 💾 Exportar")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        export_df = df[['Ranking', 'Nombre_Iniciativa', 'Nombre_Completo', 'Área', 'Clasificación', 'Puntuación Total']]
-        csv_complete = export_df.to_csv(index=False)
-        st.download_button(
-            "📥 Reporte Completo (CSV)",
-            csv_complete,
-            f"reporte_iniciativas_{datetime.now().strftime('%Y%m%d')}.csv",
-            "text/csv"
-        )
-    
-    with col2:
-        if not df[df['Clasificación'] == 'Quick Win'].empty:
-            quick_wins_export = df[df['Clasificación'] == 'Quick Win'][['Ranking', 'Nombre_Iniciativa', 'Área', 'Puntuación Total']]
-            csv_quick_wins = quick_wins_export.to_csv(index=False)
-            st.download_button(
-                "🚀 Quick Wins (CSV)",
-                csv_quick_wins,
-                f"quick_wins_{datetime.now().strftime('%Y%m%d')}.csv",
-                "text/csv"
+        with col1:
+            st.subheader(f"🎯 {iniciativa_seleccionada}")
+            st.write(f"**Proponente:** {iniciativa_data['Nombre completo']}")
+            st.write(f"**Área:** {iniciativa_data['Selecciona el área o proceso al cual perteneces']}")
+            st.write(f"**Rol:** {iniciativa_data['Rol o relación con Alico']}")
+            
+            st.markdown("---")
+            st.write("**Problema/Oportunidad:**")
+            st.write(iniciativa_data['¿Qué problema, necesidad u oportunidad busca resolver?'])
+            
+            st.write("**Propuesta:**")
+            st.write(iniciativa_data['¿Cuál es tu propuesta?'])
+            
+            st.write("**Beneficios Esperados:**")
+            st.write(iniciativa_data['¿Qué beneficios esperas que genere?'])
+        
+        with col2:
+            # Métricas de la iniciativa
+            st.markdown("### 📊 Métricas")
+            
+            priority_color = {
+                'Alta': '🟢',
+                'Media': '🟡', 
+                'Baja': '🔴'
+            }
+            
+            prioridad = iniciativa_data['categoria_prioridad']
+            st.markdown(f"**Prioridad:** {priority_color.get(prioridad, '⚪')} {prioridad}")
+            st.metric("Score Prioridad", f"{iniciativa_data['score_prioridad']:.2f}/5")
+            st.metric("Potencial Impacto", f"{iniciativa_data['potencial_impacto']:.2f}/5")
+            st.metric("Facilidad Implementación", f"{iniciativa_data['facilidad_implementacion']:.2f}/5")
+            
+            # Gráfico de radar individual
+            metrics_individuales = [
+                'Valor estratégico', 'Nivel de impacto', 'Viabilidad técnica',
+                'Costo-beneficio', 'Innovación / disrupción', 
+                'Escalabilidad / transversalidad'
+            ]
+            
+            values_individuales = [iniciativa_data[metric] for metric in metrics_individuales]
+            
+            fig_individual = go.Figure()
+            fig_individual.add_trace(go.Scatterpolar(
+                r=values_individuales,
+                theta=metrics_individuales,
+                fill='toself',
+                name=iniciativa_seleccionada
+            ))
+            
+            fig_individual.update_layout(
+                polar=dict(radialaxis=dict(visible=True, range=[0, 5])),
+                showlegend=False,
+                title="Perfil de la Iniciativa",
+                height=400
             )
+            
+            st.plotly_chart(fig_individual, use_container_width=True)
+
+with tab5:
+    st.header("📈 Análisis Comparativo")
+    
+    # Comparar hasta 3 iniciativas
+    st.subheader("🔍 Comparador de Iniciativas")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    iniciativas_para_comparar = []
+    with col1:
+        init1 = st.selectbox("Iniciativa 1:", [None] + iniciativas_disponibles, key="comp1")
+        if init1:
+            iniciativas_para_comparar.append(init1)
+    
+    with col2:
+        init2 = st.selectbox("Iniciativa 2:", [None] + iniciativas_disponibles, key="comp2")
+        if init2 and init2 != init1:
+            iniciativas_para_comparar.append(init2)
+    
+    with col3:
+        init3 = st.selectbox("Iniciativa 3:", [None] + iniciativas_disponibles, key="comp3")
+        if init3 and init3 not in [init1, init2]:
+            iniciativas_para_comparar.append(init3)
+    
+    if len(iniciativas_para_comparar) >= 2:
+        # Crear gráfico comparativo
+        df_comparativo = df_filtrado[df_filtrado['Nombre de la idea o iniciativa'].isin(iniciativas_para_comparar)]
+        
+        metrics_comp = [
+            'Valor estratégico', 'Nivel de impacto', 'Viabilidad técnica',
+            'Costo-beneficio', 'Innovación / disrupción', 
+            'Escalabilidad / transversalidad'
+        ]
+        
+        fig_comp = go.Figure()
+        
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c']
+        for i, iniciativa in enumerate(iniciativas_para_comparar):
+            data = df_comparativo[df_comparativo['Nombre de la idea o iniciativa'] == iniciativa].iloc[0]
+            values = [data[metric] for metric in metrics_comp]
+            
+            fig_comp.add_trace(go.Scatterpolar(
+                r=values,
+                theta=metrics_comp,
+                fill='toself',
+                name=iniciativa,
+                line_color=colors[i]
+            ))
+        
+        fig_comp.update_layout(
+            polar=dict(radialaxis=dict(visible=True, range=[0, 5])),
+            showlegend=True,
+            title="Comparación de Iniciativas"
+        )
+        
+        st.plotly_chart(fig_comp, use_container_width=True)
+        
+        # Tabla comparativa
+        st.subheader("📊 Tabla Comparativa")
+        
+        df_tabla_comp = df_comparativo[[
+            'Nombre de la idea o iniciativa', 'score_prioridad', 'potencial_impacto', 
+            'facilidad_implementacion', 'categoria_prioridad'
+        ]].copy()
+        
+        df_tabla_comp.columns = ['Iniciativa', 'Score Prioridad', 'Potencial Impacto', 
+                                'Facilidad Implementación', 'Categoría']
+        
+        st.dataframe(df_tabla_comp, use_container_width=True)
 
 # Footer
 st.markdown("---")
-st.markdown(f"""
-<div style='text-align: center; color: #666; padding: 1rem;'>
-    <p>💡 <strong>Sistema de Análisis de Iniciativas - Alico</strong></p>
-    <p>Última actualización: {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
-</div>
-""", unsafe_allow_html=True)
+st.markdown("**💡 Dashboard de Iniciativas de Innovación - Alico**")
+st.markdown("*Desarrollado para facilitar la toma de decisiones estratégicas basada en datos*")
