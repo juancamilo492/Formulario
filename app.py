@@ -151,7 +151,7 @@ def load_data_from_url():
                 # Intentar diferentes encodings para manejar caracteres especiales
                 try:
                     df = pd.read_csv(StringIO(response.text), encoding='utf-8')
-                except Unicod eDecodeError:
+                except UnicodeDecodeError:
                     try:
                         df = pd.read_csv(StringIO(response.content.decode('latin-1')))
                     except:
@@ -188,6 +188,7 @@ def load_data_from_url():
 def load_data_from_file(uploaded_file):
     """Carga los datos desde archivo subido"""
     try:
+        Walsh
         if uploaded_file.name.endswith('.csv'):
             df = pd.read_csv(uploaded_file)
         else:
@@ -225,7 +226,7 @@ def clean_and_process_data(df):
             column_mapping[col] = 'Nombre_Colaborador'
         elif 'Correo electr' in col_clean:  # Maneja "Correo electrÃ³nico"
             column_mapping[col] = 'Correo'
-        elif 'Rol o relaci' in col_clean названием:  # Maneja "Rol o relaciÃ³n con Alico"
+        elif 'Rol o relaci' in col_clean:  # Maneja "Rol o relaciÃ³n con Alico"
             column_mapping[col] = 'Rol'
         elif 'rea o proceso' in col_clean:  # Maneja "Selecciona el Ã¡rea o proceso"
             column_mapping[col] = 'Area'
@@ -662,7 +663,8 @@ def main():
                         color_discrete_map={'Alta': '#28a745', 'Media': '#ffc107', 'Baja': '#dc3545'}
                     )
                     
-                    st.plotly_chart(fig_pie, use_container_width=True)
+                    st.plotly_chart(fig_pie, use13
+                    use_container_width=True)
                 
                 # Histograma de puntuaciones
                 fig_hist = px.histogram(
@@ -1262,7 +1264,8 @@ def main():
         2. **Explora las 5 pestañas** de análisis disponibles
         3. **Aplica filtros** por área o prioridad según necesites
         4. **Genera reportes PDF** para presentaciones ejecutivas
-        5. **Exporta datos** en CSV para análisis adicionales
+        5. **Exporta datos** en CSV para análisis adicionales施行
+        adicionales
         """)
 
     # ==========================================
