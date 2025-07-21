@@ -278,7 +278,7 @@ def clean_and_process_data(df):
         return None
     
     # Corregir encoding en columnas de texto
-    text_columns = ['Nombre_Colaborador', 'Area', 'Nombre_Iniciativa', 'Problema', 'Propuesta', 'Beneficios']
+    text_columns = ['Nombre_Colaborador', 'Area', 'Nombre_Iniciativa', 'Problema', 'Propuesta', 'Beneficios', 'Proceso_Relacionado']
     for col in text_columns:
         if col in df_clean.columns:
             df_clean[col] = df_clean[col].apply(fix_encoding)
@@ -524,12 +524,31 @@ def main():
             prioridades = ['Todas'] + sorted(df_processed['Prioridad'].unique().tolist())
             prioridad_selected = st.sidebar.selectbox("Prioridad:", prioridades)
             
+            # Filtro por proceso
+            if 'Proceso_Relacionado' in df_processed.columns:
+                # Obtener todos los procesos únicos, manejando valores separados por comas
+                all_processes = []
+                for proc in df_processed['Proceso_Relacionado'].dropna():
+                    if isinstance(proc, str):
+                        # Separar por comas y limpiar espacios
+                        processes = [p.strip() for p in proc.split(',')]
+                        all_processes.extend(processes)
+                
+                unique_processes = ['Todos'] + sorted(list(set(all_processes)))
+                proceso_selected = st.sidebar.selectbox("Proceso:", unique_processes)
+            else:
+                proceso_selected = 'Todos'
+            
             # Aplicar filtros
             df_filtered = df_processed.copy()
             if area_selected != 'Todas':
                 df_filtered = df_filtered[df_filtered['Area'] == area_selected]
             if prioridad_selected != 'Todas':
                 df_filtered = df_filtered[df_filtered['Prioridad'] == prioridad_selected]
+            if proceso_selected != 'Todos' and 'Proceso_Relacionado' in df_processed.columns:
+                # Filtrar por proceso, considerando que puede haber múltiples procesos separados por comas
+                mask = df_filtered['Proceso_Relacionado'].str.contains(proceso_selected, case=False, na=False)
+                df_filtered = df_filtered[mask]
             
             # ==========================================
             # MÉTRICAS PRINCIPALES
@@ -572,10 +591,11 @@ def main():
             # PESTAÑAS PRINCIPALES
             # ==========================================
             
-            tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
                 "📈 Análisis General", 
                 "🏆 Ranking de Iniciativas", 
                 "📊 Análisis por Área", 
+                "⚙️ Análisis por Proceso",
                 "🔍 Detalle de Iniciativas",
                 "📋 Reporte Ejecutivo"
             ])
@@ -742,7 +762,168 @@ def main():
                 st.dataframe(area_analysis, use_container_width=True)
             
             # ==========================================
-            # TAB 4: DETALLE DE INICIATIVAS
+            # TAB 4: ANÁLISIS POR PROCESO
+            # ==========================================
+            
+            with tab5:
+                st.subheader("⚙️ Análisis por Proceso")
+                
+                if 'Proceso_Relacionado' in df_filtered.columns:
+                    # Crear un DataFrame expandido para análisis por proceso
+                    process_data = []
+                    for _, row in df_filtered.iterrows():
+                        if pd.notna(row['Proceso_Relacionado']) and row['Proceso_Relacionado'] != '':
+                            processes = [p.strip() for p in str(row['Proceso_Relacionado']).split(',')]
+                            for process in processes:
+                                if process:  # Solo si el proceso no está vacío
+                                    new_row = row.copy()
+                                    new_row['Proceso_Individual'] = process
+                                    process_data.append(new_row)
+                    
+                    if process_data:
+                        df_process_expanded = pd.DataFrame(process_data)
+                        
+                        # Análisis por proceso
+                        process_analysis = df_process_expanded.groupby('Proceso_Individual').agg({
+                            'Puntuacion_Ponderada': ['count', 'mean'],
+                            'Valor_Estrategico': 'mean',
+                            'Nivel_Impacto': 'mean',
+                            'Viabilidad_Tecnica': 'mean',
+                            'Costo_Beneficio': 'mean',
+                            'Innovacion_Disrupcion': 'mean',
+                            'Escalabilidad_Transversalidad': 'mean',
+                            'Tiempo_Implementacion': 'mean'
+                        }).round(2)
+                        
+                        process_analysis.columns = ['Num_Iniciativas', 'Puntuacion_Promedio',
+                                                   'Val_Estrategico', 'Impacto', 'Viabilidad', 'Costo_Beneficio',
+                                                   'Innovacion', 'Escalabilidad', 'Tiempo_Impl']
+                        
+                        # Ordenar por número de iniciativas
+                        process_analysis = process_analysis.sort_values('Num_Iniciativas', ascending=False)
+                        
+                        # Gráficos por proceso
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            fig_bar_proc = px.bar(
+                                x=process_analysis.index,
+                                y=process_analysis['Num_Iniciativas'],
+                                title="Número de Iniciativas por Proceso",
+                                labels={'x': 'Proceso', 'y': 'Número de Iniciativas'}
+                            )
+                            fig_bar_proc.update_xaxes(tickangle=45)
+                            st.plotly_chart(fig_bar_proc, use_container_width=True)
+                        
+                        with col2:
+                            fig_bar_proc2 = px.bar(
+                                x=process_analysis.index,
+                                y=process_analysis['Puntuacion_Promedio'],
+                                title="Puntuación Promedio por Proceso",
+                                labels={'x': 'Proceso', 'y': 'Puntuación Promedio'}
+                            )
+                            fig_bar_proc2.update_xaxes(tickangle=45)
+                            st.plotly_chart(fig_bar_proc2, use_container_width=True)
+                        
+                        # Distribución de prioridades por proceso
+                        st.subheader("🎯 Distribución de Prioridades por Proceso")
+                        
+                        priority_by_process = df_process_expanded.groupby(['Proceso_Individual', 'Prioridad']).size().unstack(fill_value=0)
+                        
+                        if not priority_by_process.empty:
+                            fig_stack = px.bar(
+                                priority_by_process,
+                                title="Distribución de Prioridades por Proceso",
+                                labels={'value': 'Número de Iniciativas', 'index': 'Proceso'},
+                                color_discrete_map={'Alta': '#28a745', 'Media': '#ffc107', 'Baja': '#dc3545'}
+                            )
+                            fig_stack.update_xaxes(tickangle=45)
+                            st.plotly_chart(fig_stack, use_container_width=True)
+                        
+                        # Heatmap de métricas por proceso
+                        if len(process_analysis) > 1:
+                            st.subheader("🌡️ Mapa de Calor: Métricas por Proceso")
+                            metrics_cols = ['Val_Estrategico', 'Impacto', 'Viabilidad', 'Costo_Beneficio',
+                                           'Innovacion', 'Escalabilidad', 'Tiempo_Impl']
+                            
+                            fig_heatmap_proc = px.imshow(
+                                process_analysis[metrics_cols].T,
+                                labels=dict(x="Proceso", y="Métrica", color="Puntuación"),
+                                x=process_analysis.index,
+                                y=['Valor Estratégico', 'Impacto', 'Viabilidad', 'Costo-Beneficio',
+                                   'Innovación', 'Escalabilidad', 'Tiempo Impl.'],
+                                title="Mapa de Calor: Métricas por Proceso",
+                                aspect="auto"
+                            )
+                            fig_heatmap_proc.update_xaxes(tickangle=45)
+                            st.plotly_chart(fig_heatmap_proc, use_container_width=True)
+                        
+                        # Top iniciativas por proceso
+                        st.subheader("🏆 Top Iniciativas por Proceso")
+                        
+                        process_list = process_analysis.index.tolist()
+                        selected_process_detail = st.selectbox(
+                            "Selecciona un proceso para ver sus mejores iniciativas:",
+                            process_list
+                        )
+                        
+                        if selected_process_detail:
+                            process_initiatives = df_process_expanded[
+                                df_process_expanded['Proceso_Individual'] == selected_process_detail
+                            ].nlargest(3, 'Puntuacion_Ponderada')
+                            
+                            for i, (_, row) in enumerate(process_initiatives.iterrows(), 1):
+                                priority_class = f"priority-{row['Prioridad'].lower()}"
+                                
+                                nombre_iniciativa = fix_encoding(row['Nombre_Iniciativa'])
+                                nombre_colaborador = fix_encoding(row['Nombre_Colaborador'])
+                                area = fix_encoding(row['Area'])
+                                
+                                st.markdown(f"""
+                                <div class="metric-card {priority_class}">
+                                    <h4>#{i} {nombre_iniciativa}</h4>
+                                    <p><strong>👤 Propuesto por:</strong> {nombre_colaborador} ({area})</p>
+                                    <p><strong>⭐ Puntuación:</strong> {row['Puntuacion_Ponderada']:.2f}/5.0 | 
+                                       <strong>🎯 Prioridad:</strong> {row['Prioridad']}</p>
+                                </div>
+                                """, unsafe_allow_html=True)
+                        
+                        # Tabla resumen por proceso
+                        st.subheader("📋 Resumen por Proceso")
+                        st.dataframe(process_analysis, use_container_width=True)
+                        
+                        # Insights por proceso
+                        st.subheader("💡 Insights por Proceso")
+                        
+                        # Proceso con más iniciativas
+                        most_active_process = process_analysis.index[0]
+                        most_initiatives_count = process_analysis.iloc[0]['Num_Iniciativas']
+                        
+                        # Proceso con mejor puntuación promedio
+                        best_scored_process = process_analysis.loc[process_analysis['Puntuacion_Promedio'].idxmax()]
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.info(f"""
+                            **🔥 Proceso más activo:**  
+                            **{most_active_process}** con {int(most_initiatives_count)} iniciativas
+                            """)
+                        
+                        with col2:
+                            st.success(f"""
+                            **⭐ Proceso mejor puntuado:**  
+                            **{best_scored_process.name}** con {best_scored_process['Puntuacion_Promedio']:.2f}/5.0 promedio
+                            """)
+                    
+                    else:
+                        st.warning("No se encontraron datos de procesos para analizar.")
+                
+                else:
+                    st.warning("La columna de procesos no está disponible en los datos actuales.")
+            
+            # ==========================================
+            # TAB 5: DETALLE DE INICIATIVAS
             # ==========================================
             
             with tab4:
@@ -836,10 +1017,10 @@ def main():
                         st.metric("Puntuación Total", f"{init_data['Puntuacion_Total']}/35")
             
             # ==========================================
-            # TAB 5: REPORTE EJECUTIVO
+            # TAB 6: REPORTE EJECUTIVO
             # ==========================================
             
-            with tab5:
+            with tab6:
                 st.subheader("📋 Reporte Ejecutivo")
                 
                 # Botones superiores
