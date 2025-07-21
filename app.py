@@ -594,9 +594,9 @@ def main():
             tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
                 "📈 Análisis General", 
                 "🏆 Ranking de Iniciativas", 
-                "⚙️ Análisis por Proceso",
-                "📊 Análisis por Área", 
+                "📊 Análisis por Área",
                 "🔍 Detalle de Iniciativas",
+                "⚙️ Análisis por Proceso", 
                 "📋 Reporte Ejecutivo"
             ])
             
