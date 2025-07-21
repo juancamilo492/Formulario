@@ -151,7 +151,7 @@ def load_data_from_url():
                 # Intentar diferentes encodings para manejar caracteres especiales
                 try:
                     df = pd.read_csv(StringIO(response.text), encoding='utf-8')
-                except UnicodeDecodeError:
+                except Unicod eDecodeError:
                     try:
                         df = pd.read_csv(StringIO(response.content.decode('latin-1')))
                     except:
@@ -225,7 +225,7 @@ def clean_and_process_data(df):
             column_mapping[col] = 'Nombre_Colaborador'
         elif 'Correo electr' in col_clean:  # Maneja "Correo electrÃ³nico"
             column_mapping[col] = 'Correo'
-        elif 'Rol o relaci' in col_clean:  # Maneja "Rol o relaciÃ³n con Alico"
+        elif 'Rol o relaci' in col_clean названием:  # Maneja "Rol o relaciÃ³n con Alico"
             column_mapping[col] = 'Rol'
         elif 'rea o proceso' in col_clean:  # Maneja "Selecciona el Ã¡rea o proceso"
             column_mapping[col] = 'Area'
@@ -516,15 +516,25 @@ def main():
             
             st.sidebar.subheader("🔍 Filtros")
             
-            # Filtro por área
-            areas_disponibles = ['Todas'] + sorted(df_processed['Area'].unique().tolist())
-            area_selected = st.sidebar.selectbox("Área:", areas_disponibles)
+            # Filtro por área (multiselección)
+            areas_disponibles = sorted(df_processed['Area'].unique().tolist())
+            area_selected = st.sidebar.multiselect(
+                "Áreas:",
+                areas_disponibles,
+                default=areas_disponibles,  # Seleccionar todas por defecto
+                help="Selecciona una o más áreas para filtrar"
+            )
             
-            # Filtro por prioridad
-            prioridades = ['Todas'] + sorted(df_processed['Prioridad'].unique().tolist())
-            prioridad_selected = st.sidebar.selectbox("Prioridad:", prioridades)
+            # Filtro por prioridad (multiselección)
+            prioridades = sorted(df_processed['Prioridad'].unique().tolist())
+            prioridad_selected = st.sidebar.multiselect(
+                "Prioridades:",
+                prioridades,
+                default=prioridades,  # Seleccionar todas por defecto
+                help="Selecciona una o más prioridades para filtrar"
+            )
             
-            # Filtro por proceso
+            # Filtro por proceso (multiselección)
             if 'Proceso_Relacionado' in df_processed.columns:
                 # Obtener todos los procesos únicos, manejando valores separados por comas
                 all_processes = []
@@ -534,20 +544,27 @@ def main():
                         processes = [p.strip() for p in proc.split(',')]
                         all_processes.extend(processes)
                 
-                unique_processes = ['Todos'] + sorted(list(set(all_processes)))
-                proceso_selected = st.sidebar.selectbox("Proceso:", unique_processes)
+                unique_processes = sorted(list(set(all_processes)))
+                proceso_selected = st.sidebar.multiselect(
+                    "Procesos:",
+                    unique_processes,
+                    default=unique_processes,  # Seleccionar todos por defecto
+                    help="Selecciona uno o más procesos para filtrar"
+                )
             else:
-                proceso_selected = 'Todos'
+                proceso_selected = []
             
             # Aplicar filtros
             df_filtered = df_processed.copy()
-            if area_selected != 'Todas':
-                df_filtered = df_filtered[df_filtered['Area'] == area_selected]
-            if prioridad_selected != 'Todas':
-                df_filtered = df_filtered[df_filtered['Prioridad'] == prioridad_selected]
-            if proceso_selected != 'Todos' and 'Proceso_Relacionado' in df_processed.columns:
+            if area_selected:
+                df_filtered = df_filtered[df_filtered['Area'].isin(area_selected)]
+            if prioridad_selected:
+                df_filtered = df_filtered[df_filtered['Prioridad'].isin(prioridad_selected)]
+            if proceso_selected and 'Proceso_Relacionado' in df_processed.columns:
                 # Filtrar por proceso, considerando que puede haber múltiples procesos separados por comas
-                mask = df_filtered['Proceso_Relacionado'].str.contains(proceso_selected, case=False, na=False)
+                mask = df_filtered['Proceso_Relacionado'].apply(
+                    lambda x: any(proc in x.split(',') for proc in proceso_selected) if pd.notna(x) else False
+                )
                 df_filtered = df_filtered[mask]
             
             # ==========================================
