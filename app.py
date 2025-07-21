@@ -151,35 +151,74 @@ def clean_and_process_data(df):
     # Crear una copia para trabajar
     df_clean = df.copy()
     
-    # Limpiar nombres de columnas (quitar espacios al inicio y final)
-    df_clean.columns = [col.strip() for col in df_clean.columns]
+    # Debug: mostrar columnas originales
+    st.write("🔍 **Debug - Columnas originales:**")
+    st.write([f'"{col}"' for col in df_clean.columns])
     
-    # Mapeo exacto de columnas según el archivo
-    column_mapping = {
-        'Marca temporal': 'Fecha',
-        'Nombre completo': 'Nombre_Colaborador',
-        'Correo electrónico': 'Correo',
-        'Rol o relación con Alico': 'Rol',
-        'Selecciona el área o proceso al cual perteneces': 'Area',
-        'Nombre de la idea o iniciativa': 'Nombre_Iniciativa',
-        '¿Qué problema, necesidad u oportunidad busca resolver?': 'Problema',
-        '¿Cuál es tu propuesta?': 'Propuesta',
-        '¿A qué proceso/s crees que se relaciona tu idea?': 'Proceso_Relacionado',
-        '¿Qué beneficios esperas que genere?': 'Beneficios',
-        '¿Esta idea la has visto implementada en otro lugar?': 'Vista_Otro_Lugar',
-        'Si tu respuesta anterior fue si, especifica dónde y cómo': 'Donde_Como',
-        '¿Crees que puede implementarse con los recursos actuales?': 'Recursos_Actuales',
-        'Valor estratégico': 'Valor_Estrategico',
-        'Nivel de impacto': 'Nivel_Impacto',
-        'Viabilidad técnica': 'Viabilidad_Tecnica',
-        'Costo-beneficio': 'Costo_Beneficio',
-        'Innovación / disrupción': 'Innovacion_Disrupcion',
-        'Escalabilidad / transversalidad': 'Escalabilidad_Transversalidad',
-        'Tiempo de implementación': 'Tiempo_Implementacion'
-    }
+    # Limpiar nombres de columnas más agresivamente
+    df_clean.columns = [col.strip().rstrip() for col in df_clean.columns]
+    
+    st.write("🔍 **Debug - Columnas después de limpiar:**")
+    st.write([f'"{col}"' for col in df_clean.columns])
+    
+    # Mapeo más flexible que maneja variaciones en espacios
+    column_mapping = {}
+    
+    # Mapear columnas principales
+    for col in df_clean.columns:
+        col_clean = col.strip()
+        
+        # Mapeo basado en contenido clave de las columnas
+        if 'Marca temporal' in col_clean:
+            column_mapping[col] = 'Fecha'
+        elif 'Nombre completo' in col_clean:
+            column_mapping[col] = 'Nombre_Colaborador'
+        elif 'Correo electrónico' in col_clean:
+            column_mapping[col] = 'Correo'
+        elif 'Rol o relación con Alico' in col_clean:
+            column_mapping[col] = 'Rol'
+        elif 'área o proceso al cual perteneces' in col_clean:
+            column_mapping[col] = 'Area'
+        elif 'Nombre de la idea o iniciativa' in col_clean:
+            column_mapping[col] = 'Nombre_Iniciativa'
+        elif 'problema, necesidad u oportunidad' in col_clean:
+            column_mapping[col] = 'Problema'
+        elif 'Cuál es tu propuesta' in col_clean:
+            column_mapping[col] = 'Propuesta'
+        elif 'proceso/s crees que se relaciona' in col_clean:
+            column_mapping[col] = 'Proceso_Relacionado'
+        elif 'beneficios esperas que genere' in col_clean:
+            column_mapping[col] = 'Beneficios'
+        elif 'idea la has visto implementada' in col_clean:
+            column_mapping[col] = 'Vista_Otro_Lugar'
+        elif 'respuesta anterior fue si' in col_clean:
+            column_mapping[col] = 'Donde_Como'
+        elif 'puede implementarse con los recursos' in col_clean:
+            column_mapping[col] = 'Recursos_Actuales'
+        elif col_clean == 'Valor estratégico':
+            column_mapping[col] = 'Valor_Estrategico'
+        elif col_clean == 'Nivel de impacto':
+            column_mapping[col] = 'Nivel_Impacto'
+        elif col_clean == 'Viabilidad técnica':
+            column_mapping[col] = 'Viabilidad_Tecnica'
+        elif col_clean == 'Costo-beneficio':
+            column_mapping[col] = 'Costo_Beneficio'
+        elif 'Innovación' in col_clean and 'disrupción' in col_clean:
+            column_mapping[col] = 'Innovacion_Disrupcion'
+        elif 'Escalabilidad' in col_clean and 'transversalidad' in col_clean:
+            column_mapping[col] = 'Escalabilidad_Transversalidad'
+        elif 'Tiempo de implementación' in col_clean:
+            column_mapping[col] = 'Tiempo_Implementacion'
+    
+    st.write("🔍 **Debug - Mapeo de columnas:**")
+    for old_col, new_col in column_mapping.items():
+        st.write(f'"{old_col}" → "{new_col}"')
     
     # Aplicar mapeo de columnas
     df_clean = df_clean.rename(columns=column_mapping)
+    
+    st.write("🔍 **Debug - Columnas finales:**")
+    st.write(list(df_clean.columns))
     
     # Verificar columnas necesarias
     numeric_columns = ['Valor_Estrategico', 'Nivel_Impacto', 'Viabilidad_Tecnica', 
@@ -192,6 +231,16 @@ def clean_and_process_data(df):
     
     if missing_columns:
         st.error(f"❌ Columnas faltantes: {missing_columns}")
+        st.write("**Columnas disponibles después del mapeo:**")
+        st.write(list(df_clean.columns))
+        
+        # Intentar mapeo manual para columnas faltantes
+        st.write("**🔧 Intentando mapeo manual...**")
+        manual_mapping = {}
+        
+        available_cols = [col for col in df_clean.columns if col not in column_mapping.values()]
+        st.write(f"Columnas disponibles para mapeo manual: {available_cols}")
+        
         return None
     
     # Filtrar registros válidos
