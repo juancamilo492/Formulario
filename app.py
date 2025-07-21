@@ -84,40 +84,57 @@ def process_dataframe(df):
     for i, col in enumerate(df.columns):
         st.sidebar.write(f"{i+1}. '{col}'")
     
-    # Mapeo flexible de columnas - buscar por palabras clave
+    # Mapeo exacto basado en el archivo real
     column_mapping = {}
     
-    # Buscar columnas por palabras clave
+    # Buscar columnas exactas
     for col in df.columns:
-        col_lower = col.lower().strip()
-        if 'nombre completo' in col_lower:
+        col_clean = col.strip()
+        if col_clean == 'Nombre completo':
             column_mapping['nombre_completo'] = col
-        elif 'nombre de la idea' in col_lower or 'iniciativa' in col_lower:
+        elif col_clean == 'Nombre de la idea o iniciativa':
             column_mapping['nombre_iniciativa'] = col
-        elif 'área' in col_lower or 'proceso' in col_lower:
+        elif col_clean == 'Selecciona el área o proceso al cual perteneces':
             column_mapping['area'] = col
-        elif 'rol' in col_lower and 'alico' in col_lower:
+        elif col_clean == 'Rol o relación con Alico':
             column_mapping['rol'] = col
-        elif 'problema' in col_lower or 'oportunidad' in col_lower:
+        elif col_clean == '¿Qué problema, necesidad u oportunidad busca resolver?':
             column_mapping['problema'] = col
-        elif 'propuesta' in col_lower and 'cuál' in col_lower:
+        elif col_clean == '¿Cuál es tu propuesta?':
             column_mapping['propuesta'] = col
-        elif 'beneficios' in col_lower:
+        elif col_clean == '¿Qué beneficios esperas que genere?':
             column_mapping['beneficios'] = col
-        elif 'valor estratégico' in col_lower or 'valor estrategico' in col_lower:
+        elif col_clean == 'Valor estratégico':
             column_mapping['valor_estrategico'] = col
-        elif 'nivel de impacto' in col_lower or 'impacto' in col_lower:
+        elif col_clean == 'Nivel de impacto':
             column_mapping['nivel_impacto'] = col
-        elif 'viabilidad técnica' in col_lower or 'viabilidad tecnica' in col_lower:
+        elif col_clean == 'Viabilidad técnica':
             column_mapping['viabilidad_tecnica'] = col
-        elif 'costo-beneficio' in col_lower or 'costo beneficio' in col_lower:
+        elif col_clean == 'Costo-beneficio':
             column_mapping['costo_beneficio'] = col
-        elif 'innovación' in col_lower or 'innovacion' in col_lower or 'disrupción' in col_lower:
+        elif col_clean == 'Innovación / disrupción':
             column_mapping['innovacion'] = col
-        elif 'escalabilidad' in col_lower or 'transversalidad' in col_lower:
+        elif col_clean == 'Escalabilidad / transversalidad':
             column_mapping['escalabilidad'] = col
-        elif 'tiempo de implementación' in col_lower or 'tiempo implementacion' in col_lower:
+        elif col_clean == 'Tiempo de implementación':
             column_mapping['tiempo_implementacion'] = col
+        elif col_clean == '¿Esta idea la has visto implementada en otro lugar?':
+            column_mapping['implementada_otro_lugar'] = col
+        elif col_clean == 'Si tu respuesta anterior fue si, especifica dónde y cómo':
+            column_mapping['donde_implementada'] = col
+        elif col_clean == '¿Crees que puede implementarse con los recursos actuales?':
+            column_mapping['recursos_actuales'] = col
+        elif col_clean == '¿A qué proceso/s crees que se relaciona tu idea?':
+            column_mapping['procesos_relacionados'] = col
+        elif col_clean == 'Correo electrónico':
+            column_mapping['correo'] = col
+        elif col_clean == 'Marca temporal':
+            column_mapping['fecha'] = col
+    
+    # Mostrar mapeo encontrado
+    st.sidebar.write("📋 Columnas mapeadas:")
+    for key, value in column_mapping.items():
+        st.sidebar.write(f"• {key}: '{value}'")
     
     # Filtrar filas vacías usando columnas encontradas
     subset_cols = []
@@ -247,6 +264,7 @@ if df.empty:
 
 # Procesar datos
 df = calculate_derived_metrics(df)
+column_mapping = getattr(df, 'attrs', {}).get('column_mapping', {})
 
 # SIDEBAR - Filtros
 st.sidebar.markdown("---")
@@ -279,11 +297,6 @@ min_prioridad, max_prioridad = st.sidebar.slider(
 
 # Aplicar filtros
 df_filtrado = df.copy()
-column_mapping = getattr(df, 'attrs', {}).get('column_mapping', {})
-
-# Filtros usando columnas mapeadas
-area_col = column_mapping.get('area', 'Selecciona el área o proceso al cual perteneces')
-rol_col = column_mapping.get('rol', 'Rol o relación con Alico')
 
 if area_seleccionada != 'Todas' and area_col in df_filtrado.columns:
     df_filtrado = df_filtrado[df_filtrado[area_col] == area_seleccionada]
@@ -324,7 +337,7 @@ with col3:
     st.metric(
         label="🚀 Alta Prioridad", 
         value=high_priority,
-        delta=f"{high_priority/len(df_filtrado)*100:.1f}% del total"
+        delta=f"{high_priority/len(df_filtrado)*100:.1f}% del total" if len(df_filtrado) > 0 else "0%"
     )
 
 with col4:
@@ -354,13 +367,22 @@ with tab1:
     
     with col1:
         # Matriz Esfuerzo-Impacto
+        nombre_col = column_mapping.get('nombre_iniciativa', 'Nombre')
+        area_col = column_mapping.get('area', 'Area')
+        
+        hover_data = []
+        if nombre_col in df_filtrado.columns:
+            hover_data.append(nombre_col)
+        if area_col in df_filtrado.columns:
+            hover_data.append(area_col)
+        
         fig = px.scatter(
             df_filtrado,
             x='facilidad_implementacion',
             y='potencial_impacto',
             size='score_prioridad',
             color='categoria_prioridad',
-            hover_data=['Nombre de la idea o iniciativa', 'Selecciona el área o proceso al cual perteneces'],
+            hover_data=hover_data,
             title="Matriz Esfuerzo vs Impacto",
             labels={
                 'facilidad_implementacion': 'Facilidad de Implementación (0-5)',
@@ -396,10 +418,13 @@ with tab1:
             (df_filtrado['potencial_impacto'] >= 3.5)
         ]
         
+        nombre_col = column_mapping.get('nombre_iniciativa', 'nombre')
+        
         if not ganadores_rapidos.empty:
             st.success("**🚀 Ganadores Rápidos:**")
             for _, row in ganadores_rapidos.iterrows():
-                st.write(f"• {row['Nombre de la idea o iniciativa']}")
+                nombre = row[nombre_col] if nombre_col in row else 'Iniciativa sin nombre'
+                st.write(f"• {nombre}")
         
         # Proyectos de alto impacto pero difíciles
         alto_impacto = df_filtrado[
@@ -410,7 +435,8 @@ with tab1:
         if not alto_impacto.empty:
             st.warning("**⚡ Alto Impacto - Planificar:**")
             for _, row in alto_impacto.iterrows():
-                st.write(f"• {row['Nombre de la idea o iniciativa']}")
+                nombre = row[nombre_col] if nombre_col in row else 'Iniciativa sin nombre'
+                st.write(f"• {nombre}")
 
 with tab2:
     st.header("📊 Análisis de Portafolio")
@@ -435,8 +461,9 @@ with tab2:
     
     with col2:
         # Distribución por área
-        if 'Selecciona el área o proceso al cual perteneces' in df_filtrado.columns:
-            area_counts = df_filtrado['Selecciona el área o proceso al cual perteneces'].value_counts()
+        area_col = column_mapping.get('area', None)
+        if area_col and area_col in df_filtrado.columns:
+            area_counts = df_filtrado[area_col].value_counts()
             
             fig_bar = px.bar(
                 x=area_counts.index,
@@ -446,38 +473,57 @@ with tab2:
             )
             fig_bar.update_layout(xaxis_tickangle=-45)
             st.plotly_chart(fig_bar, use_container_width=True)
+        else:
+            st.info("No hay datos de área disponibles")
     
     # Radar chart de métricas promedio
     st.subheader("📡 Perfil Promedio de Iniciativas")
     
-    metrics = [
-        'Valor estratégico', 'Nivel de impacto', 'Viabilidad técnica',
-        'Costo-beneficio', 'Innovación / disrupción', 
-        'Escalabilidad / transversalidad'
+    # Usar columnas mapeadas para las métricas
+    metrics_mapped = []
+    metric_labels = []
+    
+    metric_mappings = [
+        ('valor_estrategico', 'Valor Estratégico'),
+        ('nivel_impacto', 'Nivel de Impacto'), 
+        ('viabilidad_tecnica', 'Viabilidad Técnica'),
+        ('costo_beneficio', 'Costo-Beneficio'),
+        ('innovacion', 'Innovación'),
+        ('escalabilidad', 'Escalabilidad')
     ]
     
-    avg_values = [df_filtrado[metric].mean() for metric in metrics]
+    for mapping_key, label in metric_mappings:
+        if mapping_key in column_mapping:
+            col_name = column_mapping[mapping_key]
+            if col_name in df_filtrado.columns:
+                metrics_mapped.append(col_name)
+                metric_labels.append(label)
     
-    fig_radar = go.Figure()
-    
-    fig_radar.add_trace(go.Scatterpolar(
-        r=avg_values,
-        theta=metrics,
-        fill='toself',
-        name='Promedio Iniciativas'
-    ))
-    
-    fig_radar.update_layout(
-        polar=dict(
-            radialaxis=dict(
-                visible=True,
-                range=[0, 5]
-            )),
-        showlegend=True,
-        title="Perfil Promedio de Métricas (Escala 0-5)"
-    )
-    
-    st.plotly_chart(fig_radar, use_container_width=True)
+    if metrics_mapped:
+        avg_values = [df_filtrado[metric].mean() for metric in metrics_mapped]
+        
+        fig_radar = go.Figure()
+        
+        fig_radar.add_trace(go.Scatterpolar(
+            r=avg_values,
+            theta=metric_labels,
+            fill='toself',
+            name='Promedio Iniciativas'
+        ))
+        
+        fig_radar.update_layout(
+            polar=dict(
+                radialaxis=dict(
+                    visible=True,
+                    range=[0, 5]
+                )),
+            showlegend=True,
+            title="Perfil Promedio de Métricas (Escala 0-5)"
+        )
+        
+        st.plotly_chart(fig_radar, use_container_width=True)
+    else:
+        st.warning("No hay métricas numéricas disponibles para el gráfico radar")
 
 with tab3:
     st.header("🏆 Rankings de Iniciativas")
@@ -494,12 +540,17 @@ with tab3:
         "Score de Prioridad": "score_prioridad",
         "Potencial de Impacto": "potencial_impacto", 
         "Facilidad de Implementación": "facilidad_implementacion",
-        "Valor Estratégico": "Valor estratégico",
-        "Nivel de Impacto": "Nivel de impacto",
-        "Innovación": "Innovación / disrupción"
+        "Valor Estratégico": column_mapping.get('valor_estrategico', 'score_prioridad'),
+        "Nivel de Impacto": column_mapping.get('nivel_impacto', 'potencial_impacto'),
+        "Innovación": column_mapping.get('innovacion', 'score_prioridad')
     }
     
     columna_criterio = criterio_map[criterio_ranking]
+    
+    # Verificar que la columna existe
+    if columna_criterio not in df_filtrado.columns:
+        st.warning(f"La columna {criterio_ranking} no está disponible en los datos.")
+        columna_criterio = "score_prioridad"  # Fallback
     
     # Crear ranking
     df_ranking = df_filtrado.sort_values(columna_criterio, ascending=False).reset_index(drop=True)
@@ -508,14 +559,22 @@ with tab3:
     # Mostrar top 10
     st.subheader(f"🥇 Top 10 - {criterio_ranking}")
     
-    cols_display = [
-        'Posición', 'Nombre de la idea o iniciativa', 
-        'Selecciona el área o proceso al cual perteneces',
-        columna_criterio, 'categoria_prioridad'
-    ]
+    nombre_col = column_mapping.get('nombre_iniciativa', 'nombre')
+    area_col = column_mapping.get('area', 'area')
+    
+    cols_display = ['Posición']
+    if nombre_col in df_ranking.columns:
+        cols_display.append(nombre_col)
+    if area_col in df_ranking.columns:
+        cols_display.append(area_col)
+    cols_display.extend([columna_criterio, 'categoria_prioridad'])
+    
+    # Filtrar solo columnas que existen
+    cols_display = [col for col in cols_display if col in df_ranking.columns]
     
     df_display = df_ranking[cols_display].head(10).copy()
-    df_display[columna_criterio] = df_display[columna_criterio].round(2)
+    if columna_criterio in df_display.columns:
+        df_display[columna_criterio] = df_display[columna_criterio].round(2)
     
     # Formatear la tabla
     def color_priority(val):
@@ -526,94 +585,123 @@ with tab3:
         else:
             return 'background-color: #FFB6C1'
     
-    styled_df = df_display.style.applymap(color_priority, subset=['categoria_prioridad'])
-    st.dataframe(styled_df, use_container_width=True)
+    if 'categoria_prioridad' in df_display.columns:
+        styled_df = df_display.style.applymap(color_priority, subset=['categoria_prioridad'])
+        st.dataframe(styled_df, use_container_width=True)
+    else:
+        st.dataframe(df_display, use_container_width=True)
     
     # Gráfico de barras del ranking
-    top_10 = df_ranking.head(10)
-    fig_ranking = px.bar(
-        top_10,
-        x=columna_criterio,
-        y='Nombre de la idea o iniciativa',
-        orientation='h',
-        title=f"Top 10 Iniciativas por {criterio_ranking}",
-        color=columna_criterio,
-        color_continuous_scale='Viridis'
-    )
-    fig_ranking.update_layout(height=500, yaxis={'categoryorder':'total ascending'})
-    st.plotly_chart(fig_ranking, use_container_width=True)
+    if len(df_ranking) > 0:
+        top_10 = df_ranking.head(10)
+        y_col = nombre_col if nombre_col in top_10.columns else 'Posición'
+        
+        fig_ranking = px.bar(
+            top_10,
+            x=columna_criterio,
+            y=y_col,
+            orientation='h',
+            title=f"Top 10 Iniciativas por {criterio_ranking}",
+            color=columna_criterio,
+            color_continuous_scale='Viridis'
+        )
+        fig_ranking.update_layout(height=500, yaxis={'categoryorder':'total ascending'})
+        st.plotly_chart(fig_ranking, use_container_width=True)
 
 with tab4:
     st.header("📋 Detalle de Iniciativas")
     
     # Selector de iniciativa
-    iniciativas_disponibles = df_filtrado['Nombre de la idea o iniciativa'].tolist()
-    iniciativa_seleccionada = st.selectbox("Seleccionar iniciativa:", iniciativas_disponibles)
-    
-    if iniciativa_seleccionada:
-        # Obtener datos de la iniciativa
-        iniciativa_data = df_filtrado[df_filtrado['Nombre de la idea o iniciativa'] == iniciativa_seleccionada].iloc[0]
+    nombre_col = column_mapping.get('nombre_iniciativa', 'nombre')
+    if nombre_col in df_filtrado.columns:
+        iniciativas_disponibles = df_filtrado[nombre_col].tolist()
+        iniciativa_seleccionada = st.selectbox("Seleccionar iniciativa:", iniciativas_disponibles)
         
-        # Layout en columnas
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            st.subheader(f"🎯 {iniciativa_seleccionada}")
-            st.write(f"**Proponente:** {iniciativa_data['Nombre completo']}")
-            st.write(f"**Área:** {iniciativa_data['Selecciona el área o proceso al cual perteneces']}")
-            st.write(f"**Rol:** {iniciativa_data['Rol o relación con Alico']}")
+        if iniciativa_seleccionada:
+            # Obtener datos de la iniciativa
+            iniciativa_data = df_filtrado[df_filtrado[nombre_col] == iniciativa_seleccionada].iloc[0]
             
-            st.markdown("---")
-            st.write("**Problema/Oportunidad:**")
-            st.write(iniciativa_data['¿Qué problema, necesidad u oportunidad busca resolver?'])
+            # Layout en columnas
+            col1, col2 = st.columns([2, 1])
             
-            st.write("**Propuesta:**")
-            st.write(iniciativa_data['¿Cuál es tu propuesta?'])
+            with col1:
+                st.subheader(f"🎯 {iniciativa_seleccionada}")
+                
+                # Mostrar información disponible
+                info_mappings = [
+                    ('nombre_completo', 'Proponente'),
+                    ('area', 'Área'),
+                    ('rol', 'Rol'),
+                    ('problema', 'Problema/Oportunidad'),
+                    ('propuesta', 'Propuesta'),
+                    ('beneficios', 'Beneficios Esperados')
+                ]
+                
+                for mapping_key, label in info_mappings:
+                    if mapping_key in column_mapping:
+                        col_name = column_mapping[mapping_key]
+                        if col_name in iniciativa_data.index and pd.notna(iniciativa_data[col_name]):
+                            st.write(f"**{label}:** {iniciativa_data[col_name]}")
             
-            st.write("**Beneficios Esperados:**")
-            st.write(iniciativa_data['¿Qué beneficios esperas que genere?'])
-        
-        with col2:
-            # Métricas de la iniciativa
-            st.markdown("### 📊 Métricas")
-            
-            priority_color = {
-                'Alta': '🟢',
-                'Media': '🟡', 
-                'Baja': '🔴'
-            }
-            
-            prioridad = iniciativa_data['categoria_prioridad']
-            st.markdown(f"**Prioridad:** {priority_color.get(prioridad, '⚪')} {prioridad}")
-            st.metric("Score Prioridad", f"{iniciativa_data['score_prioridad']:.2f}/5")
-            st.metric("Potencial Impacto", f"{iniciativa_data['potencial_impacto']:.2f}/5")
-            st.metric("Facilidad Implementación", f"{iniciativa_data['facilidad_implementacion']:.2f}/5")
-            
-            # Gráfico de radar individual
-            metrics_individuales = [
-                'Valor estratégico', 'Nivel de impacto', 'Viabilidad técnica',
-                'Costo-beneficio', 'Innovación / disrupción', 
-                'Escalabilidad / transversalidad'
-            ]
-            
-            values_individuales = [iniciativa_data[metric] for metric in metrics_individuales]
-            
-            fig_individual = go.Figure()
-            fig_individual.add_trace(go.Scatterpolar(
-                r=values_individuales,
-                theta=metrics_individuales,
-                fill='toself',
-                name=iniciativa_seleccionada
-            ))
-            
-            fig_individual.update_layout(
-                polar=dict(radialaxis=dict(visible=True, range=[0, 5])),
-                showlegend=False,
-                title="Perfil de la Iniciativa",
-                height=400
-            )
-            
-            st.plotly_chart(fig_individual, use_container_width=True)
+            with col2:
+                # Métricas de la iniciativa
+                st.markdown("### 📊 Métricas")
+                
+                priority_color = {
+                    'Alta': '🟢',
+                    'Media': '🟡', 
+                    'Baja': '🔴'
+                }
+                
+                if 'categoria_prioridad' in iniciativa_data.index:
+                    prioridad = iniciativa_data['categoria_prioridad']
+                    st.markdown(f"**Prioridad:** {priority_color.get(prioridad, '⚪')} {prioridad}")
+                
+                st.metric("Score Prioridad", f"{iniciativa_data['score_prioridad']:.2f}/5")
+                st.metric("Potencial Impacto", f"{iniciativa_data['potencial_impacto']:.2f}/5")
+                st.metric("Facilidad Implementación", f"{iniciativa_data['facilidad_implementacion']:.2f}/5")
+                
+                # Gráfico de radar individual
+                metrics_individuales = []
+                metric_labels_individuales = []
+                
+                metric_mappings_individuales = [
+                    ('valor_estrategico', 'Valor Estratégico'),
+                    ('nivel_impacto', 'Nivel de Impacto'), 
+                    ('viabilidad_tecnica', 'Viabilidad Técnica'),
+                    ('costo_beneficio', 'Costo-Beneficio'),
+                    ('innovacion', 'Innovación'),
+                    ('escalabilidad', 'Escalabilidad')
+                ]
+                
+                for mapping_key, label in metric_mappings_individuales:
+                    if mapping_key in column_mapping:
+                        col_name = column_mapping[mapping_key]
+                        if col_name in iniciativa_data.index:
+                            metrics_individuales.append(iniciativa_data[col_name])
+                            metric_labels_individuales.append(label)
+                
+                if metrics_individuales:
+                    fig_individual = go.Figure()
+                    fig_individual.add_trace(go.Scatterpolar(
+                        r=metrics_individuales,
+                        theta=metric_labels_individuales,
+                        fill='toself',
+                        name=iniciativa_seleccionada
+                    ))
+                    
+                    fig_individual.update_layout(
+                        polar=dict(radialaxis=dict(visible=True, range=[0, 5])),
+                        showlegend=False,
+                        title="Perfil de la Iniciativa",
+                        height=400
+                    )
+                    
+                    st.plotly_chart(fig_individual, use_container_width=True)
+                else:
+                    st.info("No hay métricas disponibles para el gráfico radar")
+    else:
+        st.warning("No hay iniciativas disponibles para mostrar")
 
 with tab5:
     st.header("📈 Análisis Comparativo")
@@ -621,71 +709,144 @@ with tab5:
     # Comparar hasta 3 iniciativas
     st.subheader("🔍 Comparador de Iniciativas")
     
-    col1, col2, col3 = st.columns(3)
-    
-    iniciativas_para_comparar = []
-    with col1:
-        init1 = st.selectbox("Iniciativa 1:", [None] + iniciativas_disponibles, key="comp1")
-        if init1:
-            iniciativas_para_comparar.append(init1)
-    
-    with col2:
-        init2 = st.selectbox("Iniciativa 2:", [None] + iniciativas_disponibles, key="comp2")
-        if init2 and init2 != init1:
-            iniciativas_para_comparar.append(init2)
-    
-    with col3:
-        init3 = st.selectbox("Iniciativa 3:", [None] + iniciativas_disponibles, key="comp3")
-        if init3 and init3 not in [init1, init2]:
-            iniciativas_para_comparar.append(init3)
-    
-    if len(iniciativas_para_comparar) >= 2:
-        # Crear gráfico comparativo
-        df_comparativo = df_filtrado[df_filtrado['Nombre de la idea o iniciativa'].isin(iniciativas_para_comparar)]
+    nombre_col = column_mapping.get('nombre_iniciativa', 'nombre')
+    if nombre_col in df_filtrado.columns:
+        iniciativas_disponibles = df_filtrado[nombre_col].tolist()
         
-        metrics_comp = [
-            'Valor estratégico', 'Nivel de impacto', 'Viabilidad técnica',
-            'Costo-beneficio', 'Innovación / disrupción', 
-            'Escalabilidad / transversalidad'
-        ]
+        col1, col2, col3 = st.columns(3)
         
-        fig_comp = go.Figure()
+        iniciativas_para_comparar = []
+        with col1:
+            init1 = st.selectbox("Iniciativa 1:", [None] + iniciativas_disponibles, key="comp1")
+            if init1:
+                iniciativas_para_comparar.append(init1)
         
-        colors = ['#1f77b4', '#ff7f0e', '#2ca02c']
-        for i, iniciativa in enumerate(iniciativas_para_comparar):
-            data = df_comparativo[df_comparativo['Nombre de la idea o iniciativa'] == iniciativa].iloc[0]
-            values = [data[metric] for metric in metrics_comp]
+        with col2:
+            opciones2 = [None] + [i for i in iniciativas_disponibles if i != init1]
+            init2 = st.selectbox("Iniciativa 2:", opciones2, key="comp2")
+            if init2:
+                iniciativas_para_comparar.append(init2)
+        
+        with col3:
+            opciones3 = [None] + [i for i in iniciativas_disponibles if i not in [init1, init2]]
+            init3 = st.selectbox("Iniciativa 3:", opciones3, key="comp3")
+            if init3:
+                iniciativas_para_comparar.append(init3)
+        
+        if len(iniciativas_para_comparar) >= 2:
+            # Crear gráfico comparativo
+            df_comparativo = df_filtrado[df_filtrado[nombre_col].isin(iniciativas_para_comparar)]
             
-            fig_comp.add_trace(go.Scatterpolar(
-                r=values,
-                theta=metrics_comp,
-                fill='toself',
-                name=iniciativa,
-                line_color=colors[i]
-            ))
-        
-        fig_comp.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[0, 5])),
-            showlegend=True,
-            title="Comparación de Iniciativas"
-        )
-        
-        st.plotly_chart(fig_comp, use_container_width=True)
-        
-        # Tabla comparativa
-        st.subheader("📊 Tabla Comparativa")
-        
-        df_tabla_comp = df_comparativo[[
-            'Nombre de la idea o iniciativa', 'score_prioridad', 'potencial_impacto', 
-            'facilidad_implementacion', 'categoria_prioridad'
-        ]].copy()
-        
-        df_tabla_comp.columns = ['Iniciativa', 'Score Prioridad', 'Potencial Impacto', 
-                                'Facilidad Implementación', 'Categoría']
-        
-        st.dataframe(df_tabla_comp, use_container_width=True)
+            # Métricas para comparar
+            metrics_comp = []
+            metric_labels_comp = []
+            
+            metric_mappings_comp = [
+                ('valor_estrategico', 'Valor Estratégico'),
+                ('nivel_impacto', 'Nivel de Impacto'), 
+                ('viabilidad_tecnica', 'Viabilidad Técnica'),
+                ('costo_beneficio', 'Costo-Beneficio'),
+                ('innovacion', 'Innovación'),
+                ('escalabilidad', 'Escalabilidad')
+            ]
+            
+            for mapping_key, label in metric_mappings_comp:
+                if mapping_key in column_mapping:
+                    col_name = column_mapping[mapping_key]
+                    if col_name in df_comparativo.columns:
+                        metrics_comp.append(col_name)
+                        metric_labels_comp.append(label)
+            
+            if metrics_comp:
+                fig_comp = go.Figure()
+                
+                colors = ['#1f77b4', '#ff7f0e', '#2ca02c']
+                for i, iniciativa in enumerate(iniciativas_para_comparar):
+                    data = df_comparativo[df_comparativo[nombre_col] == iniciativa].iloc[0]
+                    values = [data[metric] for metric in metrics_comp]
+                    
+                    fig_comp.add_trace(go.Scatterpolar(
+                        r=values,
+                        theta=metric_labels_comp,
+                        fill='toself',
+                        name=iniciativa,
+                        line_color=colors[i] if i < len(colors) else colors[0]
+                    ))
+                
+                fig_comp.update_layout(
+                    polar=dict(radialaxis=dict(visible=True, range=[0, 5])),
+                    showlegend=True,
+                    title="Comparación de Iniciativas"
+                )
+                
+                st.plotly_chart(fig_comp, use_container_width=True)
+                
+                # Tabla comparativa
+                st.subheader("📊 Tabla Comparativa")
+                
+                cols_comparar = [nombre_col, 'score_prioridad', 'potencial_impacto', 
+                               'facilidad_implementacion', 'categoria_prioridad']
+                cols_comparar = [col for col in cols_comparar if col in df_comparativo.columns]
+                
+                df_tabla_comp = df_comparativo[cols_comparar].copy()
+                
+                # Renombrar columnas para mejor presentación
+                column_names = {
+                    nombre_col: 'Iniciativa',
+                    'score_prioridad': 'Score Prioridad',
+                    'potencial_impacto': 'Potencial Impacto',
+                    'facilidad_implementacion': 'Facilidad Implementación',
+                    'categoria_prioridad': 'Categoría'
+                }
+                
+                df_tabla_comp = df_tabla_comp.rename(columns=column_names)
+                
+                # Redondear valores numéricos
+                for col in df_tabla_comp.columns:
+                    if df_tabla_comp[col].dtype in ['float64', 'int64'] and col != 'Iniciativa':
+                        df_tabla_comp[col] = df_tabla_comp[col].round(2)
+                
+                st.dataframe(df_tabla_comp, use_container_width=True)
+            else:
+                st.warning("No hay métricas disponibles para la comparación")
+        elif len(iniciativas_para_comparar) == 1:
+            st.info("Selecciona al menos 2 iniciativas para comparar")
+        else:
+            st.info("Selecciona las iniciativas que deseas comparar")
+    else:
+        st.warning("No hay datos de iniciativas disponibles para comparar")
 
 # Footer
 st.markdown("---")
 st.markdown("**💡 Dashboard de Iniciativas de Innovación - Alico**")
 st.markdown("*Desarrollado para facilitar la toma de decisiones estratégicas basada en datos*")
+
+# Información adicional en el sidebar
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 📈 Algoritmo de Puntuación")
+st.sidebar.markdown("""
+**Score de Prioridad:**
+- Valor Estratégico: 25%
+- Nivel de Impacto: 25%
+- Viabilidad Técnica: 20%
+- Costo-Beneficio: 15%
+- Innovación: 10%
+- Escalabilidad: 5%
+""")
+
+st.sidebar.markdown("### 🔄 Actualización")
+st.sidebar.markdown("Los datos se actualizan automáticamente cada 5 minutos desde Google Sheets.")
+
+# Debug info (opcional - puedes comentar estas líneas en producción)
+with st.expander("🔧 Información de Debug"):
+    st.write("**Columnas disponibles:**", list(df.columns))
+    st.write("**Mapeo de columnas:**", column_mapping)
+    st.write("**Número de filas originales:**", len(df))
+    st.write("**Número de filas filtradas:**", len(df_filtrado))
+    if not df_filtrado.empty:
+        st.write("**Rango de scores de prioridad:**", 
+                f"{df_filtrado['score_prioridad'].min():.2f} - {df_filtrado['score_prioridad'].max():.2f}")
+    st.write("**Filtros activos:**")
+    st.write(f"- Área: {area_seleccionada}")
+    st.write(f"- Rol: {rol_seleccionado}")
+    st.write(f"- Rango prioridad: {min_prioridad} - {max_prioridad}")
