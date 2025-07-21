@@ -511,32 +511,37 @@ def main():
         if df_processed is not None and len(df_processed) > 0:
             
             # ==========================================
-            # FILTROS SIDEBAR
+            # FILTROS SIDEBAR CON CHECKBOXES MÚLTIPLES
             # ==========================================
             
-            st.sidebar.subheader("🔍 Filtros")
+            st.sidebar.subheader("🔍 Filtros Múltiples")
             
             # Filtro por área con checkboxes múltiples
             st.sidebar.markdown("**📊 Filtrar por Área:**")
             areas_disponibles = sorted(df_processed['Area'].unique().tolist())
             
             # Checkbox para seleccionar todas las áreas
-            select_all_areas_filter = st.sidebar.checkbox("🔄 Seleccionar todas las áreas", value=True, key="filter_all_areas")
+            select_all_areas_filter = st.sidebar.checkbox(
+                "🔄 Seleccionar todas las áreas", 
+                value=True, 
+                key="multi_filter_all_areas_v2"
+            )
             
             if select_all_areas_filter:
                 areas_selected = areas_disponibles
-                st.sidebar.success(f"✅ Todas las áreas seleccionadas ({len(areas_disponibles)})")
+                st.sidebar.success(f"✅ Todas las áreas ({len(areas_disponibles)})")
             else:
                 areas_selected = []
-                # Mostrar checkboxes para cada área
-                for area in areas_disponibles:
-                    if st.sidebar.checkbox(f"📋 {area}", key=f"filter_area_{area}"):
-                        areas_selected.append(area)
+                # Crear un contenedor expandible para las áreas
+                with st.sidebar.expander("📋 Seleccionar áreas específicas", expanded=True):
+                    for i, area in enumerate(areas_disponibles):
+                        if st.checkbox(f"📊 {area}", key=f"multi_area_check_{i}_v2"):
+                            areas_selected.append(area)
                 
                 if areas_selected:
-                    st.sidebar.info(f"📊 Áreas seleccionadas: {len(areas_selected)}")
+                    st.sidebar.info(f"📊 {len(areas_selected)} área(s) seleccionada(s)")
                 else:
-                    st.sidebar.warning("⚠️ Ninguna área seleccionada")
+                    st.sidebar.warning("⚠️ Selecciona al menos un área")
             
             st.sidebar.markdown("---")
             
@@ -545,24 +550,29 @@ def main():
             prioridades_disponibles = sorted(df_processed['Prioridad'].unique().tolist())
             
             # Checkbox para seleccionar todas las prioridades
-            select_all_priorities = st.sidebar.checkbox("🔄 Seleccionar todas las prioridades", value=True, key="filter_all_priorities")
+            select_all_priorities = st.sidebar.checkbox(
+                "🔄 Seleccionar todas las prioridades", 
+                value=True, 
+                key="multi_filter_all_priorities_v2"
+            )
             
             if select_all_priorities:
                 prioridades_selected = prioridades_disponibles
-                st.sidebar.success(f"✅ Todas las prioridades seleccionadas")
+                st.sidebar.success(f"✅ Todas las prioridades")
             else:
                 prioridades_selected = []
-                # Mostrar checkboxes para cada prioridad con colores
-                priority_colors = {"Alta": "🟢", "Media": "🟡", "Baja": "🔴"}
-                for prioridad in prioridades_disponibles:
-                    color_icon = priority_colors.get(prioridad, "⚪")
-                    if st.sidebar.checkbox(f"{color_icon} {prioridad}", key=f"filter_priority_{prioridad}"):
-                        prioridades_selected.append(prioridad)
+                # Contenedor para prioridades
+                with st.sidebar.expander("🎯 Seleccionar prioridades específicas", expanded=True):
+                    priority_colors = {"Alta": "🟢", "Media": "🟡", "Baja": "🔴"}
+                    for i, prioridad in enumerate(prioridades_disponibles):
+                        color_icon = priority_colors.get(prioridad, "⚪")
+                        if st.checkbox(f"{color_icon} {prioridad}", key=f"multi_priority_check_{i}_v2"):
+                            prioridades_selected.append(prioridad)
                 
                 if prioridades_selected:
-                    st.sidebar.info(f"🎯 Prioridades seleccionadas: {len(prioridades_selected)}")
+                    st.sidebar.info(f"🎯 {len(prioridades_selected)} prioridad(es) seleccionada(s)")
                 else:
-                    st.sidebar.warning("⚠️ Ninguna prioridad seleccionada")
+                    st.sidebar.warning("⚠️ Selecciona al menos una prioridad")
             
             st.sidebar.markdown("---")
             
@@ -570,11 +580,10 @@ def main():
             if 'Proceso_Relacionado' in df_processed.columns:
                 st.sidebar.markdown("**⚙️ Filtrar por Proceso:**")
                 
-                # Obtener todos los procesos únicos, manejando valores separados por comas
+                # Obtener todos los procesos únicos
                 all_processes = []
                 for proc in df_processed['Proceso_Relacionado'].dropna():
                     if isinstance(proc, str):
-                        # Separar por comas y limpiar espacios
                         processes = [p.strip() for p in proc.split(',')]
                         all_processes.extend(processes)
                 
@@ -582,65 +591,84 @@ def main():
                 
                 if unique_processes:
                     # Checkbox para seleccionar todos los procesos
-                    select_all_processes_filter = st.sidebar.checkbox("🔄 Seleccionar todos los procesos", value=True, key="filter_all_processes")
+                    select_all_processes_filter = st.sidebar.checkbox(
+                        "🔄 Seleccionar todos los procesos", 
+                        value=True, 
+                        key="multi_filter_all_processes_v2"
+                    )
                     
                     if select_all_processes_filter:
                         procesos_selected = unique_processes
-                        st.sidebar.success(f"✅ Todos los procesos seleccionados ({len(unique_processes)})")
+                        st.sidebar.success(f"✅ Todos los procesos ({len(unique_processes)})")
                     else:
                         procesos_selected = []
-                        # Mostrar checkboxes para cada proceso
-                        for proceso in unique_processes:
-                            if st.sidebar.checkbox(f"⚙️ {proceso}", key=f"filter_process_{proceso}"):
-                                procesos_selected.append(proceso)
+                        # Contenedor para procesos
+                        with st.sidebar.expander("⚙️ Seleccionar procesos específicos", expanded=True):
+                            for i, proceso in enumerate(unique_processes):
+                                # Truncar nombres largos para mejor visualización
+                                proceso_display = proceso if len(proceso) <= 30 else proceso[:27] + "..."
+                                if st.checkbox(f"⚙️ {proceso_display}", key=f"multi_process_check_{i}_v2"):
+                                    procesos_selected.append(proceso)
                         
                         if procesos_selected:
-                            st.sidebar.info(f"⚙️ Procesos seleccionados: {len(procesos_selected)}")
+                            st.sidebar.info(f"⚙️ {len(procesos_selected)} proceso(s) seleccionado(s)")
                         else:
-                            st.sidebar.warning("⚠️ Ningún proceso seleccionado")
+                            st.sidebar.warning("⚠️ Selecciona al menos un proceso")
                 else:
                     procesos_selected = []
                     st.sidebar.warning("❌ No se encontraron procesos")
             else:
                 procesos_selected = []
             
-            # Aplicar filtros
+            # Aplicar filtros con validación
             df_filtered = df_processed.copy()
+            
+            # Verificar que hay selecciones válidas
+            valid_filters = True
             
             # Filtrar por áreas seleccionadas
             if areas_selected:
                 df_filtered = df_filtered[df_filtered['Area'].isin(areas_selected)]
             else:
-                df_filtered = df_filtered.iloc[0:0]  # DataFrame vacío si no hay áreas seleccionadas
+                valid_filters = False
             
             # Filtrar por prioridades seleccionadas
-            if prioridades_selected:
+            if prioridades_selected and valid_filters:
                 df_filtered = df_filtered[df_filtered['Prioridad'].isin(prioridades_selected)]
-            else:
-                df_filtered = df_filtered.iloc[0:0]  # DataFrame vacío si no hay prioridades seleccionadas
+            elif not prioridades_selected:
+                valid_filters = False
             
             # Filtrar por procesos seleccionados
-            if procesos_selected and 'Proceso_Relacionado' in df_processed.columns:
-                # Crear máscara para procesos (considerando múltiples procesos por fila)
+            if procesos_selected and 'Proceso_Relacionado' in df_processed.columns and valid_filters:
                 mask = pd.Series([False] * len(df_filtered))
                 for proceso in procesos_selected:
                     mask |= df_filtered['Proceso_Relacionado'].str.contains(proceso, case=False, na=False)
                 df_filtered = df_filtered[mask]
             
-            # Mostrar resumen de filtros aplicados
-            if len(df_filtered) != len(df_processed):
-                st.sidebar.markdown("---")
-                st.sidebar.markdown("**📋 Resumen de Filtros:**")
-                st.sidebar.metric("Iniciativas mostradas", len(df_filtered))
-                st.sidebar.metric("Total disponibles", len(df_processed))
-                filtrado_pct = (len(df_filtered) / len(df_processed)) * 100
-                st.sidebar.metric("% Mostrado", f"{filtrado_pct:.1f}%")
-                
-                if len(df_filtered) == 0:
-                    st.sidebar.error("❌ No hay datos que coincidan con los filtros seleccionados")
+            # Si no hay filtros válidos, mostrar DataFrame vacío
+            if not valid_filters:
+                df_filtered = df_filtered.iloc[0:0]
             
-            # Botón para limpiar todos los filtros
-            if st.sidebar.button("🔄 Limpiar todos los filtros"):
+            # Mostrar resumen de filtros aplicados
+            st.sidebar.markdown("---")
+            st.sidebar.markdown("**📊 Resumen de Filtros:**")
+            
+            col1, col2 = st.sidebar.columns(2)
+            with col1:
+                st.metric("Mostradas", len(df_filtered))
+            with col2:
+                st.metric("Total", len(df_processed))
+            
+            if len(df_processed) > 0:
+                filtrado_pct = (len(df_filtered) / len(df_processed)) * 100
+                st.sidebar.progress(filtrado_pct / 100)
+                st.sidebar.caption(f"📈 {filtrado_pct:.1f}% del total")
+            
+            if len(df_filtered) == 0:
+                st.sidebar.error("❌ Sin resultados con filtros actuales")
+            
+            # Botón para limpiar filtros
+            if st.sidebar.button("🔄 Resetear todos los filtros", key="reset_filters_v2"):
                 st.rerun()
             
             # ==========================================
