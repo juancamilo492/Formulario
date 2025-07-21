@@ -54,10 +54,19 @@ st.markdown("""
     }
     .metric-card {
         background: #f8f9fa;
-        padding: 1rem;
+        padding: 1.2rem;
         border-radius: 8px;
         border-left: 4px solid #2d5aa0;
-        margin: 0.5rem 0;
+        margin: 0.8rem 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .metric-card h4 {
+        margin-bottom: 0.8rem;
+        color: #1f4e79;
+    }
+    .metric-card p {
+        margin-bottom: 0.5rem;
+        line-height: 1.4;
     }
     .priority-alta {
         border-left-color: #28a745 !important;
@@ -423,11 +432,13 @@ def generate_pdf_report(df_filtered):
         nombre_colaborador = fix_encoding(row['Nombre_Colaborador'])
         area = fix_encoding(row['Area'])
         problema = fix_encoding(str(row.get('Problema', 'No especificado')))
+        propuesta = fix_encoding(str(row.get('Propuesta', 'No especificada')))
         
         elements.append(Paragraph(f"<b>{i}. {nombre_iniciativa}</b>", normal_style))
         elements.append(Paragraph(f"<b>Propuesto por:</b> {nombre_colaborador} ({area})", normal_style))
         elements.append(Paragraph(f"<b>Puntuación:</b> {row['Puntuacion_Ponderada']:.2f}/5.0", normal_style))
-        elements.append(Paragraph(f"<b>Problema:</b> {problema[:100]}...", normal_style))
+        elements.append(Paragraph(f"<b>Problema que resuelve:</b> {problema[:150]}...", normal_style))
+        elements.append(Paragraph(f"<b>Propuesta:</b> {propuesta[:150]}...", normal_style))
         elements.append(Spacer(1, 10))
     
     # Recomendaciones
@@ -645,14 +656,16 @@ def main():
                     nombre_colaborador = fix_encoding(row['Nombre_Colaborador'])
                     area = fix_encoding(row['Area'])
                     problema = fix_encoding(str(row.get('Problema', 'No especificado')))
+                    propuesta = fix_encoding(str(row.get('Propuesta', 'No especificada')))
                     
                     st.markdown(f"""
                     <div class="metric-card {priority_class}">
                         <h4>#{idx+1} {nombre_iniciativa}</h4>
-                        <p><strong>Propuesto por:</strong> {nombre_colaborador} ({area})</p>
-                        <p><strong>Puntuación:</strong> {row['Puntuacion_Ponderada']:.2f}/5.0 | 
-                           <strong>Prioridad:</strong> {row['Prioridad']}</p>
-                        <p><strong>Problema:</strong> {problema[:100]}...</p>
+                        <p><strong>👤 Propuesto por:</strong> {nombre_colaborador} ({area})</p>
+                        <p><strong>⭐ Puntuación:</strong> {row['Puntuacion_Ponderada']:.2f}/5.0 | 
+                           <strong>🎯 Prioridad:</strong> {row['Prioridad']}</p>
+                        <p><strong>🔍 Problema que resuelve:</strong> {problema[:100]}{'...' if len(problema) > 100 else ''}</p>
+                        <p><strong>💡 Propuesta:</strong> {propuesta[:120]}{'...' if len(propuesta) > 120 else ''}</p>
                     </div>
                     """, unsafe_allow_html=True)
                 
@@ -957,7 +970,8 @@ def main():
     <p><strong>⭐ Puntuación:</strong> {row['Puntuacion_Ponderada']:.2f}/5.0 | 
        <strong>🎯 Prioridad:</strong> {row['Prioridad']}</p>
     <p><strong>💪 Fortalezas:</strong> {fortalezas_text}</p>
-    <p><strong>📝 Problema:</strong> {problema[:120]}{'...' if len(problema) > 120 else ''}</p>
+    <p><strong>🔍 Problema que resuelve:</strong> {problema[:100]}{'...' if len(problema) > 100 else ''}</p>
+    <p><strong>💡 Propuesta:</strong> {fix_encoding(str(row.get('Propuesta', 'No especificada')))[:100]}{'...' if len(str(row.get('Propuesta', ''))) > 100 else ''}</p>
 </div>
                     """, unsafe_allow_html=True)
                 
