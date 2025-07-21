@@ -76,24 +76,73 @@ def process_dataframe(df):
     if df.empty:
         return df
     
-    # Limpiar nombres de columnas
-    df.columns = df.columns.str.strip()
+    # Limpiar nombres de columnas - más agresivo
+    df.columns = df.columns.str.strip().str.replace('\n', ' ').str.replace('\r', ' ')
     
-    # Filtrar filas vacías
-    df = df.dropna(subset=['Nombre completo', 'Nombre de la idea o iniciativa'], how='all')
+    # Debug: mostrar columnas disponibles
+    st.sidebar.write("🔍 Columnas detectadas:")
+    for i, col in enumerate(df.columns):
+        st.sidebar.write(f"{i+1}. '{col}'")
     
-    # Columnas numéricas (escala 0-5)
-    numeric_cols = [
-        'Valor estratégico', 'Nivel de impacto', 'Viabilidad técnica',
-        'Costo-beneficio', 'Innovación / disrupción', 
-        'Escalabilidad / transversalidad', 'Tiempo de implementación'
+    # Mapeo flexible de columnas - buscar por palabras clave
+    column_mapping = {}
+    
+    # Buscar columnas por palabras clave
+    for col in df.columns:
+        col_lower = col.lower().strip()
+        if 'nombre completo' in col_lower:
+            column_mapping['nombre_completo'] = col
+        elif 'nombre de la idea' in col_lower or 'iniciativa' in col_lower:
+            column_mapping['nombre_iniciativa'] = col
+        elif 'área' in col_lower or 'proceso' in col_lower:
+            column_mapping['area'] = col
+        elif 'rol' in col_lower and 'alico' in col_lower:
+            column_mapping['rol'] = col
+        elif 'problema' in col_lower or 'oportunidad' in col_lower:
+            column_mapping['problema'] = col
+        elif 'propuesta' in col_lower and 'cuál' in col_lower:
+            column_mapping['propuesta'] = col
+        elif 'beneficios' in col_lower:
+            column_mapping['beneficios'] = col
+        elif 'valor estratégico' in col_lower or 'valor estrategico' in col_lower:
+            column_mapping['valor_estrategico'] = col
+        elif 'nivel de impacto' in col_lower or 'impacto' in col_lower:
+            column_mapping['nivel_impacto'] = col
+        elif 'viabilidad técnica' in col_lower or 'viabilidad tecnica' in col_lower:
+            column_mapping['viabilidad_tecnica'] = col
+        elif 'costo-beneficio' in col_lower or 'costo beneficio' in col_lower:
+            column_mapping['costo_beneficio'] = col
+        elif 'innovación' in col_lower or 'innovacion' in col_lower or 'disrupción' in col_lower:
+            column_mapping['innovacion'] = col
+        elif 'escalabilidad' in col_lower or 'transversalidad' in col_lower:
+            column_mapping['escalabilidad'] = col
+        elif 'tiempo de implementación' in col_lower or 'tiempo implementacion' in col_lower:
+            column_mapping['tiempo_implementacion'] = col
+    
+    # Filtrar filas vacías usando columnas encontradas
+    subset_cols = []
+    if 'nombre_completo' in column_mapping:
+        subset_cols.append(column_mapping['nombre_completo'])
+    if 'nombre_iniciativa' in column_mapping:
+        subset_cols.append(column_mapping['nombre_iniciativa'])
+    
+    if subset_cols:
+        df = df.dropna(subset=subset_cols, how='all')
+    
+    # Procesar columnas numéricas
+    numeric_mappings = [
+        'valor_estrategico', 'nivel_impacto', 'viabilidad_tecnica',
+        'costo_beneficio', 'innovacion', 'escalabilidad', 'tiempo_implementacion'
     ]
     
-    for col in numeric_cols:
-        if col in df.columns:
+    for mapping_key in numeric_mappings:
+        if mapping_key in column_mapping:
+            col = column_mapping[mapping_key]
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-            # Asegurar que esté en el rango 0-5
             df[col] = df[col].clip(0, 5)
+    
+    # Agregar mapeo al DataFrame para uso posterior
+    df.attrs['column_mapping'] = column_mapping
     
     return df
 
@@ -104,21 +153,51 @@ def calculate_derived_metrics(df):
         
     df = df.copy()
     
+    # Obtener mapeo de columnas
+    column_mapping = getattr(df, 'attrs', {}).get('column_mapping', {})
+    
+    # Verificar que tenemos las columnas necesarias
+    required_metrics = [
+        'valor_estrategico', 'nivel_impacto', 'viabilidad_tecnica',
+        'costo_beneficio', 'innovacion', 'escalabilidad', 'tiempo_implementacion'
+    ]
+    
+    missing_metrics = []
+    for metric in required_metrics:
+        if metric not in column_mapping:
+            missing_metrics.append(metric)
+    
+    if missing_metrics:
+        st.warning(f"⚠️ No se encontraron las siguientes columnas: {missing_metrics}")
+        st.info("Verifique que los nombres de las columnas en Google Sheets coincidan con los esperados.")
+        
+        # Crear columnas dummy con valor 0 para evitar errores
+        for metric in missing_metrics:
+            df[f'dummy_{metric}'] = 0
+            column_mapping[metric] = f'dummy_{metric}'
+    
     # Score de prioridad ponderado (escala 0-5)
     df['score_prioridad'] = (
-        df['Valor estratégico'] * 0.25 +
-        df['Nivel de impacto'] * 0.25 +
-        df['Viabilidad técnica'] * 0.20 +
-        df['Costo-beneficio'] * 0.15 +
-        df['Innovación / disrupción'] * 0.10 +
-        df['Escalabilidad / transversalidad'] * 0.05
+        df[column_mapping.get('valor_estrategico', 'dummy_valor_estrategico')] * 0.25 +
+        df[column_mapping.get('nivel_impacto', 'dummy_nivel_impacto')] * 0.25 +
+        df[column_mapping.get('viabilidad_tecnica', 'dummy_viabilidad_tecnica')] * 0.20 +
+        df[column_mapping.get('costo_beneficio', 'dummy_costo_beneficio')] * 0.15 +
+        df[column_mapping.get('innovacion', 'dummy_innovacion')] * 0.10 +
+        df[column_mapping.get('escalabilidad', 'dummy_escalabilidad')] * 0.05
     )
     
     # Facilidad de implementación (viabilidad técnica + inversión del tiempo)
-    df['facilidad_implementacion'] = (df['Viabilidad técnica'] + (5 - df['Tiempo de implementación'])) / 2
+    viabilidad_col = column_mapping.get('viabilidad_tecnica', 'dummy_viabilidad_tecnica')
+    tiempo_col = column_mapping.get('tiempo_implementacion', 'dummy_tiempo_implementacion')
+    
+    df['facilidad_implementacion'] = (df[viabilidad_col] + (5 - df[tiempo_col])) / 2
     
     # Potencial de impacto (impacto + escalabilidad + innovación)
-    df['potencial_impacto'] = (df['Nivel de impacto'] + df['Escalabilidad / transversalidad'] + df['Innovación / disrupción']) / 3
+    impacto_col = column_mapping.get('nivel_impacto', 'dummy_nivel_impacto')
+    escalabilidad_col = column_mapping.get('escalabilidad', 'dummy_escalabilidad')
+    innovacion_col = column_mapping.get('innovacion', 'dummy_innovacion')
+    
+    df['potencial_impacto'] = (df[impacto_col] + df[escalabilidad_col] + df[innovacion_col]) / 3
     
     # Categorización por prioridad
     df['categoria_prioridad'] = pd.cut(
@@ -127,6 +206,9 @@ def calculate_derived_metrics(df):
         labels=['Baja', 'Media', 'Alta'],
         include_lowest=True
     )
+    
+    # Guardar el mapeo actualizado
+    df.attrs['column_mapping'] = column_mapping
     
     return df
 
@@ -171,11 +253,19 @@ st.sidebar.markdown("---")
 st.sidebar.header("🔍 Filtros")
 
 # Filtro por área
-areas_disponibles = ['Todas'] + list(df['Selecciona el área o proceso al cual perteneces'].dropna().unique())
+area_col = column_mapping.get('area', 'Selecciona el área o proceso al cual perteneces')
+if area_col in df.columns:
+    areas_disponibles = ['Todas'] + list(df[area_col].dropna().unique())
+else:
+    areas_disponibles = ['Todas']
 area_seleccionada = st.sidebar.selectbox("Filtrar por área:", areas_disponibles)
 
 # Filtro por rol
-roles_disponibles = ['Todos'] + list(df['Rol o relación con Alico'].dropna().unique())
+rol_col = column_mapping.get('rol', 'Rol o relación con Alico')
+if rol_col in df.columns:
+    roles_disponibles = ['Todos'] + list(df[rol_col].dropna().unique())
+else:
+    roles_disponibles = ['Todos']
 rol_seleccionado = st.sidebar.selectbox("Filtrar por rol:", roles_disponibles)
 
 # Filtro por rango de prioridad
@@ -189,12 +279,17 @@ min_prioridad, max_prioridad = st.sidebar.slider(
 
 # Aplicar filtros
 df_filtrado = df.copy()
+column_mapping = getattr(df, 'attrs', {}).get('column_mapping', {})
 
-if area_seleccionada != 'Todas':
-    df_filtrado = df_filtrado[df_filtrado['Selecciona el área o proceso al cual perteneces'] == area_seleccionada]
+# Filtros usando columnas mapeadas
+area_col = column_mapping.get('area', 'Selecciona el área o proceso al cual perteneces')
+rol_col = column_mapping.get('rol', 'Rol o relación con Alico')
 
-if rol_seleccionado != 'Todos':
-    df_filtrado = df_filtrado[df_filtrado['Rol o relación con Alico'] == rol_seleccionado]
+if area_seleccionada != 'Todas' and area_col in df_filtrado.columns:
+    df_filtrado = df_filtrado[df_filtrado[area_col] == area_seleccionada]
+
+if rol_seleccionado != 'Todos' and rol_col in df_filtrado.columns:
+    df_filtrado = df_filtrado[df_filtrado[rol_col] == rol_seleccionado]
 
 df_filtrado = df_filtrado[
     (df_filtrado['score_prioridad'] >= min_prioridad) & 
