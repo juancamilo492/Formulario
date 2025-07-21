@@ -188,7 +188,6 @@ def load_data_from_url():
 def load_data_from_file(uploaded_file):
     """Carga los datos desde archivo subido"""
     try:
-        Walsh
         if uploaded_file.name.endswith('.csv'):
             df = pd.read_csv(uploaded_file)
         else:
@@ -517,25 +516,15 @@ def main():
             
             st.sidebar.subheader("🔍 Filtros")
             
-            # Filtro por área (multiselección)
-            areas_disponibles = sorted(df_processed['Area'].unique().tolist())
-            area_selected = st.sidebar.multiselect(
-                "Áreas:",
-                areas_disponibles,
-                default=areas_disponibles,  # Seleccionar todas por defecto
-                help="Selecciona una o más áreas para filtrar"
-            )
+            # Filtro por área (multi-selección)
+            areas_disponibles = sorted(df_processed['Area'].dropna().unique().tolist())
+            areas_selected = st.sidebar.multiselect("Áreas:", areas_disponibles, default=areas_disponibles)
             
-            # Filtro por prioridad (multiselección)
-            prioridades = sorted(df_processed['Prioridad'].unique().tolist())
-            prioridad_selected = st.sidebar.multiselect(
-                "Prioridades:",
-                prioridades,
-                default=prioridades,  # Seleccionar todas por defecto
-                help="Selecciona una o más prioridades para filtrar"
-            )
+            # Filtro por prioridad (multi-selección)
+            prioridades_disponibles = sorted(df_processed['Prioridad'].dropna().unique().tolist())
+            prioridades_selected = st.sidebar.multiselect("Prioridades:", prioridades_disponibles, default=prioridades_disponibles)
             
-            # Filtro por proceso (multiselección)
+            # Filtro por proceso
             if 'Proceso_Relacionado' in df_processed.columns:
                 # Obtener todos los procesos únicos, manejando valores separados por comas
                 all_processes = []
@@ -546,27 +535,22 @@ def main():
                         all_processes.extend(processes)
                 
                 unique_processes = sorted(list(set(all_processes)))
-                proceso_selected = st.sidebar.multiselect(
-                    "Procesos:",
-                    unique_processes,
-                    default=unique_processes,  # Seleccionar todos por defecto
-                    help="Selecciona uno o más procesos para filtrar"
-                )
+                procesos_selected = st.sidebar.multiselect("Procesos relacionados:", unique_processes, default=unique_processes)
             else:
-                proceso_selected = []
+                proceso_selected = 'Todos'
             
             # Aplicar filtros
             df_filtered = df_processed.copy()
-            if area_selected:
-                df_filtered = df_filtered[df_filtered['Area'].isin(area_selected)]
-            if prioridad_selected:
-                df_filtered = df_filtered[df_filtered['Prioridad'].isin(prioridad_selected)]
-            if proceso_selected and 'Proceso_Relacionado' in df_processed.columns:
-                # Filtrar por proceso, considerando que puede haber múltiples procesos separados por comas
-                mask = df_filtered['Proceso_Relacionado'].apply(
-                    lambda x: any(proc in x.split(',') for proc in proceso_selected) if pd.notna(x) else False
-                )
-                df_filtered = df_filtered[mask]
+            if areas_selected:
+                df_filtered = df_filtered[df_filtered['Area'].isin(areas_selected)]
+            if prioridades_selected:
+                df_filtered = df_filtered[df_filtered['Prioridad'].isin(prioridades_selected)]
+            if procesos_selected and 'Proceso_Relacionado' in df_filtered.columns:
+                df_filtered = df_filtered[
+                    df_filtered['Proceso_Relacionado'].apply(
+                        lambda x: any(proc.lower() in str(x).lower() for proc in procesos_selected)
+                    )
+                ]
             
             # ==========================================
             # MÉTRICAS PRINCIPALES
@@ -663,8 +647,7 @@ def main():
                         color_discrete_map={'Alta': '#28a745', 'Media': '#ffc107', 'Baja': '#dc3545'}
                     )
                     
-                    st.plotly_chart(fig_pie, use13
-                    use_container_width=True)
+                    st.plotly_chart(fig_pie, use_container_width=True)
                 
                 # Histograma de puntuaciones
                 fig_hist = px.histogram(
@@ -1264,8 +1247,7 @@ def main():
         2. **Explora las 5 pestañas** de análisis disponibles
         3. **Aplica filtros** por área o prioridad según necesites
         4. **Genera reportes PDF** para presentaciones ejecutivas
-        5. **Exporta datos** en CSV para análisis adicionales施行
-        adicionales
+        5. **Exporta datos** en CSV para análisis adicionales
         """)
 
     # ==========================================
