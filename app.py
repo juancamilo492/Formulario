@@ -1,8 +1,4 @@
-show_zeros = st.checkbox(
-        "Incluir iniciativas sin evaluar",
-        value=True,
-        help="Mostrar iniciativas con puntuaciones en 0"
-    )import streamlit as st
+import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -367,10 +363,10 @@ with st.sidebar:
         help="Filtrar iniciativas por puntuación total mínima"
     )
     
-    show_debug = st.checkbox(
-        "🔧 Mostrar información de debug",
-        value=False,
-        help="Útil para diagnosticar problemas de conexión"
+    show_zeros = st.checkbox(
+        "Incluir iniciativas sin evaluar",
+        value=True,
+        help="Mostrar iniciativas con puntuaciones en 0"
     )
     
     # Información técnica
