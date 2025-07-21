@@ -82,27 +82,30 @@ def process_dataframe(df):
     # Debug: mostrar columnas disponibles
     st.sidebar.write("🔍 Columnas detectadas:")
     for i, col in enumerate(df.columns):
-        st.sidebar.write(f"{i+1}. '{col}'")
+        st.sidebar.write(f"{i+1}. '{col}' (longitud: {len(col)})")
     
-    # Mapeo exacto basado en el archivo real
+    # Mapeo exacto basado en el archivo real - más flexible
     column_mapping = {}
     
-    # Buscar columnas exactas
+    # Buscar columnas exactas (con manejo de espacios adicionales)
     for col in df.columns:
         col_clean = col.strip()
+        # Debug para ver qué está comparando
+        st.sidebar.write(f"Comparando: '{col_clean}'")
+        
         if col_clean == 'Nombre completo':
             column_mapping['nombre_completo'] = col
-        elif col_clean == 'Nombre de la idea o iniciativa':
+        elif 'Nombre de la idea' in col_clean and 'iniciativa' in col_clean:
             column_mapping['nombre_iniciativa'] = col
-        elif col_clean == 'Selecciona el área o proceso al cual perteneces':
+        elif 'área o proceso' in col_clean and 'perteneces' in col_clean:
             column_mapping['area'] = col
-        elif col_clean == 'Rol o relación con Alico':
+        elif 'Rol' in col_clean and 'Alico' in col_clean:
             column_mapping['rol'] = col
-        elif col_clean == '¿Qué problema, necesidad u oportunidad busca resolver?':
+        elif 'problema' in col_clean and 'oportunidad' in col_clean:
             column_mapping['problema'] = col
-        elif col_clean == '¿Cuál es tu propuesta?':
+        elif 'Cuál es tu propuesta' in col_clean:
             column_mapping['propuesta'] = col
-        elif col_clean == '¿Qué beneficios esperas que genere?':
+        elif 'beneficios' in col_clean and 'genere' in col_clean:
             column_mapping['beneficios'] = col
         elif col_clean == 'Valor estratégico':
             column_mapping['valor_estrategico'] = col
@@ -112,19 +115,19 @@ def process_dataframe(df):
             column_mapping['viabilidad_tecnica'] = col
         elif col_clean == 'Costo-beneficio':
             column_mapping['costo_beneficio'] = col
-        elif col_clean == 'Innovación / disrupción':
+        elif 'Innovación' in col_clean and 'disrupción' in col_clean:
             column_mapping['innovacion'] = col
-        elif col_clean == 'Escalabilidad / transversalidad':
+        elif 'Escalabilidad' in col_clean and 'transversalidad' in col_clean:
             column_mapping['escalabilidad'] = col
-        elif col_clean == 'Tiempo de implementación':
+        elif 'Tiempo de implementación' in col_clean:
             column_mapping['tiempo_implementacion'] = col
-        elif col_clean == '¿Esta idea la has visto implementada en otro lugar?':
+        elif 'implementada en otro lugar' in col_clean:
             column_mapping['implementada_otro_lugar'] = col
-        elif col_clean == 'Si tu respuesta anterior fue si, especifica dónde y cómo':
+        elif 'respuesta anterior fue si' in col_clean:
             column_mapping['donde_implementada'] = col
-        elif col_clean == '¿Crees que puede implementarse con los recursos actuales?':
+        elif 'recursos actuales' in col_clean:
             column_mapping['recursos_actuales'] = col
-        elif col_clean == '¿A qué proceso/s crees que se relaciona tu idea?':
+        elif 'proceso' in col_clean and 'relaciona' in col_clean:
             column_mapping['procesos_relacionados'] = col
         elif col_clean == 'Correo electrónico':
             column_mapping['correo'] = col
@@ -144,7 +147,10 @@ def process_dataframe(df):
         subset_cols.append(column_mapping['nombre_iniciativa'])
     
     if subset_cols:
+        # Mostrar datos antes del filtrado
+        st.sidebar.write(f"Filas antes del filtrado: {len(df)}")
         df = df.dropna(subset=subset_cols, how='all')
+        st.sidebar.write(f"Filas después del filtrado: {len(df)}")
     
     # Procesar columnas numéricas
     numeric_mappings = [
@@ -270,20 +276,33 @@ column_mapping = getattr(df, 'attrs', {}).get('column_mapping', {})
 st.sidebar.markdown("---")
 st.sidebar.header("🔍 Filtros")
 
+# Debug: mostrar columnas encontradas
+st.sidebar.write("🔍 Debug - Columnas para filtros:")
+area_col = column_mapping.get('area')
+rol_col = column_mapping.get('rol')
+st.sidebar.write(f"• Área: '{area_col}'")
+st.sidebar.write(f"• Rol: '{rol_col}'")
+
 # Filtro por área
-area_col = column_mapping.get('area', 'Selecciona el área o proceso al cual perteneces')
-if area_col in df.columns:
-    areas_disponibles = ['Todas'] + list(df[area_col].dropna().unique())
+if area_col and area_col in df.columns:
+    areas_unicas = df[area_col].dropna().unique()
+    st.sidebar.write(f"• Áreas encontradas: {list(areas_unicas)}")
+    areas_disponibles = ['Todas'] + list(areas_unicas)
 else:
     areas_disponibles = ['Todas']
+    st.sidebar.write("⚠️ No se encontró columna de área")
+
 area_seleccionada = st.sidebar.selectbox("Filtrar por área:", areas_disponibles)
 
-# Filtro por rol
-rol_col = column_mapping.get('rol', 'Rol o relación con Alico')
-if rol_col in df.columns:
-    roles_disponibles = ['Todos'] + list(df[rol_col].dropna().unique())
+# Filtro por rol  
+if rol_col and rol_col in df.columns:
+    roles_unicos = df[rol_col].dropna().unique()
+    st.sidebar.write(f"• Roles encontrados: {list(roles_unicos)}")
+    roles_disponibles = ['Todos'] + list(roles_unicos)
 else:
     roles_disponibles = ['Todos']
+    st.sidebar.write("⚠️ No se encontró columna de rol")
+
 rol_seleccionado = st.sidebar.selectbox("Filtrar por rol:", roles_disponibles)
 
 # Filtro por rango de prioridad
