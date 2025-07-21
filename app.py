@@ -1,4 +1,8 @@
-import streamlit as st
+show_zeros = st.checkbox(
+        "Incluir iniciativas sin evaluar",
+        value=True,
+        help="Mostrar iniciativas con puntuaciones en 0"
+    )import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -363,10 +367,10 @@ with st.sidebar:
         help="Filtrar iniciativas por puntuación total mínima"
     )
     
-    show_zeros = st.checkbox(
-        "Incluir iniciativas sin evaluar",
-        value=True,
-        help="Mostrar iniciativas con puntuaciones en 0"
+    show_debug = st.checkbox(
+        "🔧 Mostrar información de debug",
+        value=False,
+        help="Útil para diagnosticar problemas de conexión"
     )
     
     # Información técnica
@@ -441,7 +445,24 @@ if df_raw.empty:
     st.error("❌ No se pudieron cargar los datos. Verifica la conexión a Google Sheets.")
     st.stop()
 
-df = calculate_scores(df_raw)
+st.write("**Información del dataset cargado:**")
+st.write(f"- Filas: {len(df_raw)}")
+st.write(f"- Columnas: {len(df_raw.columns)}")
+
+# Mostrar una muestra de los datos para debug
+with st.expander("🔍 Ver muestra de datos (para debugging)"):
+    st.write("**Primeras columnas:**")
+    st.write(list(df_raw.columns))
+    st.write("**Primeras 3 filas:**")
+    st.dataframe(df_raw.head(3))
+
+try:
+    df = calculate_scores(df_raw)
+except Exception as e:
+    st.error(f"❌ Error procesando los datos: {str(e)}")
+    st.write("**Intentando con datos de demostración...**")
+    df_raw = load_demo_data()
+    df = calculate_scores(df_raw)
 
 # Aplicar filtros
 if not show_zeros:
