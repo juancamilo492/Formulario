@@ -2,6 +2,7 @@
 """
 Analizador de Iniciativas de Innovación
 Sistema de Análisis y Priorización de Propuestas
+Desarrollado para el equipo de Innovación
 """
 
 # ==========================================
@@ -74,6 +75,47 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
+# FUNCIONES AUXILIARES
+# ==========================================
+
+def fix_encoding(text):
+    """Corrige problemas de encoding UTF-8"""
+    if pd.isna(text) or text == "":
+        return text
+    
+    text = str(text)
+    
+    # Diccionario de reemplazos para caracteres mal codificados
+    replacements = {
+        'Ã¡': 'á',
+        'Ã©': 'é',
+        'Ã­': 'í',
+        'Ã³': 'ó',
+        'Ãº': 'ú',
+        'Ã±': 'ñ',
+        'Ã': 'Á',
+        'Ã‰': 'É',
+        'Ã': 'Í',
+        'Ã"': 'Ó',
+        'Ãš': 'Ú',
+        'Ã'': 'Ñ',
+        'Â¿': '¿',
+        'Â¡': '¡',
+        'Â°': '°',
+        'âœ…': '✅',
+        'â': '"',
+        'â': '"',
+        'â': '–',
+        'â€': '—'
+    }
+    
+    # Aplicar reemplazos
+    for bad_char, good_char in replacements.items():
+        text = text.replace(bad_char, good_char)
+    
+    return text
+
+# ==========================================
 # FUNCIONES DE CARGA DE DATOS
 # ==========================================
 
@@ -99,29 +141,18 @@ def load_data_from_url():
                 
                 # Intentar diferentes encodings para manejar caracteres especiales
                 try:
-                    # Primero intentar UTF-8
                     df = pd.read_csv(StringIO(response.text), encoding='utf-8')
                 except UnicodeDecodeError:
                     try:
-                        # Si falla, intentar latin-1
                         df = pd.read_csv(StringIO(response.content.decode('latin-1')))
                     except:
-                        # Como último recurso, usar el texto tal como viene
                         df = pd.read_csv(StringIO(response.text))
                 
                 if len(df) > 0:
                     st.success(f"✅ Datos cargados exitosamente desde Google Sheets ({len(df)} registros)")
-                    
-                    # Debug: mostrar sample de columnas para verificar encoding
-                    st.write("🔍 **Sample de columnas detectadas:**")
-                    sample_cols = list(df.columns)[:5]  # Primeras 5 columnas
-                    for i, col in enumerate(sample_cols):
-                        st.write(f"{i+1}. \"{col}\"")
-                    
                     return df
                     
             except Exception as e:
-                st.write(f"Intento con URL falló: {str(e)}")
                 continue
                 
         # Si ninguna URL funciona
@@ -169,17 +200,16 @@ def clean_and_process_data(df):
     # Crear una copia para trabajar
     df_clean = df.copy()
     
-    # Limpiar nombres de columnas más agresivamente
+    # Limpiar nombres de columnas
     df_clean.columns = [col.strip().rstrip() for col in df_clean.columns]
     
-    # Mapeo que maneja tanto caracteres normales como mal codificados
+    # Mapeo inteligente de columnas que maneja encoding issues
     column_mapping = {}
     
-    # Mapear columnas principales
     for col in df_clean.columns:
         col_clean = col.strip()
         
-        # Mapeo basado en contenido clave de las columnas (maneja encoding issues)
+        # Mapeo basado en contenido clave de las columnas
         if 'Marca temporal' in col_clean:
             column_mapping[col] = 'Fecha'
         elif 'Nombre completo' in col_clean:
@@ -222,11 +252,6 @@ def clean_and_process_data(df):
         elif 'Tiempo de implementaci' in col_clean:  # Maneja "Tiempo de implementaciÃ³n"
             column_mapping[col] = 'Tiempo_Implementacion'
     
-    # Debug: mostrar mapeo
-    st.write("🔍 **Mapeo de columnas aplicado:**")
-    for old_col, new_col in column_mapping.items():
-        st.write(f'"{old_col}" → "{new_col}"')
-    
     # Aplicar mapeo de columnas
     df_clean = df_clean.rename(columns=column_mapping)
     
@@ -240,18 +265,14 @@ def clean_and_process_data(df):
     missing_columns = [col for col in required_columns if col not in df_clean.columns]
     
     if missing_columns:
-        st.error(f"❌ Columnas aún faltantes después del mapeo: {missing_columns}")
-        st.write("**Columnas disponibles después del mapeo:**")
-        st.write(list(df_clean.columns))
-        
-        # Mostrar columnas sin mapear para diagnóstico
-        unmapped_cols = [col for col in df.columns if col not in column_mapping.keys()]
-        if unmapped_cols:
-            st.write("**Columnas que no se pudieron mapear:**")
-            for col in unmapped_cols:
-                st.write(f'- "{col}"')
-        
+        st.error(f"❌ Columnas faltantes: {missing_columns}")
         return None
+    
+    # Corregir encoding en columnas de texto
+    text_columns = ['Nombre_Colaborador', 'Area', 'Nombre_Iniciativa', 'Problema', 'Propuesta', 'Beneficios']
+    for col in text_columns:
+        if col in df_clean.columns:
+            df_clean[col] = df_clean[col].apply(fix_encoding)
     
     # Filtrar registros válidos
     valid_mask = (
@@ -275,7 +296,7 @@ def clean_and_process_data(df):
         df_clean['Tiempo_Implementacion']
     )
     
-    # Calcular puntuación ponderada
+    # Calcular puntuación ponderada (criterio de priorización inteligente)
     df_clean['Puntuacion_Ponderada'] = (
         df_clean['Valor_Estrategico'] * 0.20 +      # 20% Valor estratégico
         df_clean['Nivel_Impacto'] * 0.20 +          # 20% Nivel de impacto
@@ -283,7 +304,7 @@ def clean_and_process_data(df):
         df_clean['Costo_Beneficio'] * 0.15 +        # 15% Costo-beneficio
         df_clean['Innovacion_Disrupcion'] * 0.10 +  # 10% Innovación
         df_clean['Escalabilidad_Transversalidad'] * 0.10 + # 10% Escalabilidad
-        df_clean['Tiempo_Implementacion'] * 0.10    # 10% Tiempo
+        df_clean['Tiempo_Implementacion'] * 0.10    # 10% Tiempo (más rápido = mejor)
     )
     
     # Categorizar prioridad
@@ -302,8 +323,6 @@ def clean_and_process_data(df):
         (df_clean['Viabilidad_Tecnica'] + df_clean['Costo_Beneficio'] + 
          df_clean['Tiempo_Implementacion']) / 3
     )
-    
-    st.success(f"✅ Datos procesados exitosamente: {len(df_clean)} registros válidos")
     
     return df_clean
 
@@ -400,12 +419,15 @@ def generate_pdf_report(df_filtered):
     top_5 = df_filtered.nlargest(5, 'Puntuacion_Ponderada')
     
     for i, (_, row) in enumerate(top_5.iterrows(), 1):
-        elements.append(Paragraph(f"<b>{i}. {row['Nombre_Iniciativa']}</b>", normal_style))
-        elements.append(Paragraph(f"<b>Propuesto por:</b> {row['Nombre_Colaborador']} ({row['Area']})", normal_style))
-        elements.append(Paragraph(f"<b>Puntuación:</b> {row['Puntuacion_Ponderada']:.2f}/5.0", normal_style))
+        nombre_iniciativa = fix_encoding(row['Nombre_Iniciativa'])
+        nombre_colaborador = fix_encoding(row['Nombre_Colaborador'])
+        area = fix_encoding(row['Area'])
+        problema = fix_encoding(str(row.get('Problema', 'No especificado')))
         
-        problema = str(row.get('Problema', 'No especificado'))[:100]
-        elements.append(Paragraph(f"<b>Problema:</b> {problema}...", normal_style))
+        elements.append(Paragraph(f"<b>{i}. {nombre_iniciativa}</b>", normal_style))
+        elements.append(Paragraph(f"<b>Propuesto por:</b> {nombre_colaborador} ({area})", normal_style))
+        elements.append(Paragraph(f"<b>Puntuación:</b> {row['Puntuacion_Ponderada']:.2f}/5.0", normal_style))
+        elements.append(Paragraph(f"<b>Problema:</b> {problema[:100]}...", normal_style))
         elements.append(Spacer(1, 10))
     
     # Recomendaciones
@@ -427,7 +449,7 @@ def generate_pdf_report(df_filtered):
     return buffer
 
 # ==========================================
-# INTERFAZ PRINCIPAL
+# FUNCIÓN PRINCIPAL DE LA APLICACIÓN
 # ==========================================
 
 def main():
@@ -618,13 +640,19 @@ def main():
                 for idx, row in df_ranked.head(10).iterrows():
                     priority_class = f"priority-{row['Prioridad'].lower()}"
                     
+                    # Aplicar corrección de encoding
+                    nombre_iniciativa = fix_encoding(row['Nombre_Iniciativa'])
+                    nombre_colaborador = fix_encoding(row['Nombre_Colaborador'])
+                    area = fix_encoding(row['Area'])
+                    problema = fix_encoding(str(row.get('Problema', 'No especificado')))
+                    
                     st.markdown(f"""
                     <div class="metric-card {priority_class}">
-                        <h4>#{idx+1} {row['Nombre_Iniciativa']}</h4>
-                        <p><strong>Propuesto por:</strong> {row['Nombre_Colaborador']} ({row['Area']})</p>
+                        <h4>#{idx+1} {nombre_iniciativa}</h4>
+                        <p><strong>Propuesto por:</strong> {nombre_colaborador} ({area})</p>
                         <p><strong>Puntuación:</strong> {row['Puntuacion_Ponderada']:.2f}/5.0 | 
                            <strong>Prioridad:</strong> {row['Prioridad']}</p>
-                        <p><strong>Problema:</strong> {str(row.get('Problema', 'No especificado'))[:100]}...</p>
+                        <p><strong>Problema:</strong> {problema[:100]}...</p>
                     </div>
                     """, unsafe_allow_html=True)
                 
@@ -718,25 +746,33 @@ def main():
                     # Mostrar detalles
                     init_data = df_filtered[df_filtered['Nombre_Iniciativa'] == selected_initiative].iloc[0]
                     
+                    # Aplicar corrección de encoding
+                    nombre_iniciativa = fix_encoding(init_data['Nombre_Iniciativa'])
+                    nombre_colaborador = fix_encoding(init_data['Nombre_Colaborador'])
+                    area = fix_encoding(init_data['Area'])
+                    problema = fix_encoding(str(init_data.get('Problema', 'No especificado')))
+                    propuesta = fix_encoding(str(init_data.get('Propuesta', 'No especificada')))
+                    beneficios = fix_encoding(str(init_data.get('Beneficios', 'No especificados')))
+                    
                     col1, col2 = st.columns([2, 1])
                     
                     with col1:
                         st.markdown(f"""
-                        ### {init_data['Nombre_Iniciativa']}
+                        ### {nombre_iniciativa}
                         
-                        **👤 Propuesta por:** {init_data['Nombre_Colaborador']}  
-                        **🏢 Área:** {init_data['Area']}  
+                        **👤 Propuesta por:** {nombre_colaborador}  
+                        **🏢 Área:** {area}  
                         **⭐ Puntuación Ponderada:** {init_data['Puntuacion_Ponderada']:.2f}/5.0  
                         **🎯 Prioridad:** {init_data['Prioridad']}
                         
                         **📝 Problema que resuelve:**
-                        {init_data.get('Problema', 'No especificado')}
+                        {problema}
                         
                         **💡 Propuesta:**
-                        {init_data.get('Propuesta', 'No especificada')}
+                        {propuesta}
                         
                         **✅ Beneficios esperados:**
-                        {init_data.get('Beneficios', 'No especificados')}
+                        {beneficios}
                         """)
                     
                     with col2:
@@ -854,7 +890,7 @@ def main():
                     st.metric("Puntuación Promedio", f"{avg_score:.2f}/5.0")
                 
                 with met_col4:
-                    st.metric("Área Más Activa", top_area)
+                    st.metric("Área Más Activa", fix_encoding(top_area))
                 
                 # Distribución de prioridades
                 st.markdown("#### 🎯 Distribución de Prioridades")
@@ -891,6 +927,12 @@ def main():
                 for i, (_, row) in enumerate(top_3.iterrows(), 1):
                     priority_class = f"priority-{row['Prioridad'].lower()}"
                     
+                    # Aplicar corrección de encoding
+                    nombre_iniciativa = fix_encoding(row['Nombre_Iniciativa'])
+                    nombre_colaborador = fix_encoding(row['Nombre_Colaborador'])
+                    area = fix_encoding(row['Area'])
+                    problema = fix_encoding(str(row.get('Problema', 'No especificado')))
+                    
                     # Calcular fortalezas
                     metrics_dict = {
                         'Valor_Estrategico': 'Valor Estratégico',
@@ -910,12 +952,12 @@ def main():
                     
                     st.markdown(f"""
 <div class="metric-card {priority_class}">
-    <h4>🏆 #{i} {row['Nombre_Iniciativa']}</h4>
-    <p><strong>👤 Propuesto por:</strong> {row['Nombre_Colaborador']} ({row['Area']})</p>
+    <h4>🏆 #{i} {nombre_iniciativa}</h4>
+    <p><strong>👤 Propuesto por:</strong> {nombre_colaborador} ({area})</p>
     <p><strong>⭐ Puntuación:</strong> {row['Puntuacion_Ponderada']:.2f}/5.0 | 
        <strong>🎯 Prioridad:</strong> {row['Prioridad']}</p>
     <p><strong>💪 Fortalezas:</strong> {fortalezas_text}</p>
-    <p><strong>📝 Problema:</strong> {str(row.get('Problema', 'No especificado'))[:120]}{'...' if len(str(row.get('Problema', ''))) > 120 else ''}</p>
+    <p><strong>📝 Problema:</strong> {problema[:120]}{'...' if len(problema) > 120 else ''}</p>
 </div>
                     """, unsafe_allow_html=True)
                 
@@ -938,7 +980,7 @@ def main():
                 if high_scalability > 0:
                     recommendations.append(f"**🔄 Potencial de escalabilidad:** {high_scalability} iniciativas muestran alto potencial de replicación")
                 
-                recommendations.append(f"**👏 Reconocimiento:** El área de '{top_area}' muestra el mayor nivel de participación")
+                recommendations.append(f"**👏 Reconocimiento:** El área de '{fix_encoding(top_area)}' muestra el mayor nivel de participación")
                 
                 for rec in recommendations:
                     st.markdown(f"• {rec}")
@@ -992,6 +1034,7 @@ def main():
         - 🏆 Rankings y comparaciones
         - 📋 Reportes ejecutivos en PDF
         - 🔍 Análisis detallado por iniciativa
+        - 🔧 Corrección automática de caracteres especiales
         
         ### Criterios de evaluación (escala 0-5):
         - **Valor estratégico (20%):** Contribución a objetivos estratégicos
@@ -1010,10 +1053,10 @@ def main():
         5. **Exporta datos** en CSV para análisis adicionales
         """)
 
-# ==========================================
-# FOOTER
-# ==========================================
-
+    # ==========================================
+    # FOOTER
+    # ==========================================
+    
     st.markdown("---")
     st.markdown("🚀 **Sistema de Análisis de Iniciativas de Innovación** | Desarrollado para el equipo de Innovación")
 
