@@ -226,6 +226,8 @@ def clean_and_process_data(df):
         (df_clean['Viabilidad_Tecnica'] + df_clean['Costo_Beneficio'] + df_clean['Tiempo_Implementacion']) / 3
     )
     
+    return df_clean
+
 def generate_pdf_report(df_filtered):
     """Genera un reporte ejecutivo en PDF profesional"""
     buffer = BytesIO()
@@ -341,95 +343,6 @@ def generate_pdf_report(df_filtered):
             problema = problema[:100] + "..."
         elements.append(Paragraph(f"<b>Problema que resuelve:</b> {problema}", normal_style))
         elements.append(Spacer(1, 10))
-    
-    # Análisis por área
-    elements.append(Paragraph("ANÁLISIS POR ÁREA ORGANIZACIONAL", heading_style))
-    
-    area_analysis = df_filtered.groupby('Area').agg({
-        'Puntuacion_Ponderada': ['count', 'mean'],
-        'Prioridad': lambda x: (x == 'Alta').sum()
-    }).round(2)
-    
-    area_analysis.columns = ['Num_Iniciativas', 'Puntuacion_Promedio', 'Alta_Prioridad']
-    area_analysis = area_analysis.sort_values('Puntuacion_Promedio', ascending=False)
-    
-    area_data = [['Área', 'N° Iniciativas', 'Puntuación Promedio', 'Alta Prioridad']]
-    for area, data in area_analysis.iterrows():
-        area_data.append([
-            area,
-            str(int(data['Num_Iniciativas'])),
-            f"{data['Puntuacion_Promedio']:.2f}",
-            str(int(data['Alta_Prioridad']))
-        ])
-    
-    area_table = Table(area_data, colWidths=[2*inch, 1.2*inch, 1.5*inch, 1.2*inch])
-    area_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2d5aa0')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 11),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black),
-        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 1), (-1, -1), 10),
-    ]))
-    
-    elements.append(area_table)
-    elements.append(Spacer(1, 20))
-    
-    # Recomendaciones estratégicas
-    elements.append(Paragraph("RECOMENDACIONES ESTRATÉGICAS", heading_style))
-    
-    recomendaciones = []
-    
-    if high_priority > 0:
-        recomendaciones.append(f"<b>Implementación inmediata:</b> Priorizar las {high_priority} iniciativas de alta puntuación para obtener resultados rápidos y visibles.")
-    
-    if medium_priority > 0:
-        recomendaciones.append(f"<b>Análisis detallado:</b> Las {medium_priority} iniciativas de prioridad media requieren evaluación adicional de recursos y timeline.")
-    
-    # Identificar área más activa
-    most_active_area = df_filtered['Area'].value_counts().index[0] if len(df_filtered) > 0 else "N/A"
-    recomendaciones.append(f"<b>Reconocimiento:</b> El área de '{most_active_area}' muestra el mayor nivel de participación en el proceso de innovación.")
-    
-    # Análisis de viabilidad
-    low_viability = len(df_filtered[df_filtered['Viabilidad_Tecnica'] < 3])
-    if low_viability > 0:
-        recomendaciones.append(f"<b>Desarrollo de capacidades:</b> {low_viability} iniciativas presentan desafíos de viabilidad técnica que requieren fortalecimiento de capacidades.")
-    
-    # Oportunidades de escalabilidad
-    high_scalability = len(df_filtered[df_filtered['Escalabilidad_Transversalidad'] >= 4])
-    if high_scalability > 0:
-        recomendaciones.append(f"<b>Potencial de escalabilidad:</b> {high_scalability} iniciativas muestran alto potencial de replicación en otras áreas.")
-    
-    for recom in recomendaciones:
-        elements.append(Paragraph(f"• {recom}", normal_style))
-        elements.append(Spacer(1, 8))
-    
-    # Próximos pasos
-    elements.append(Spacer(1, 20))
-    elements.append(Paragraph("PRÓXIMOS PASOS SUGERIDOS", heading_style))
-    
-    next_steps = [
-        "Convocar comité de evaluación para revisar iniciativas de alta prioridad",
-        "Asignar recursos y equipos para las 3 mejores iniciativas",
-        "Establecer cronograma de implementación con hitos específicos",
-        "Definir métricas de éxito y sistema de seguimiento",
-        "Comunicar resultados a los colaboradores participantes",
-        "Planificar siguiente ciclo de recolección de iniciativas"
-    ]
-    
-    for step in next_steps:
-        elements.append(Paragraph(f"• {step}", normal_style))
-        elements.append(Spacer(1, 6))
-    
-    # Footer
-    elements.append(Spacer(1, 30))
-    elements.append(Paragraph("___", normal_style))
-    elements.append(Paragraph("Reporte generado automáticamente por el Sistema de Análisis de Iniciativas de Innovación", 
-                              ParagraphStyle('Footer', parent=styles['Normal'], fontSize=8, textColor=colors.grey)))
     
     # Construir PDF
     doc.build(elements)
@@ -824,7 +737,7 @@ if df is not None:
             top_area = df_filtered['Area'].value_counts().index[0] if len(df_filtered) > 0 else "N/A"
             
             fecha_reporte = datetime.now().strftime('%B %Y')
-            st.markdown(f"### 📊 Resumen Ejecutivo")
+            st.markdown("### 📊 Resumen Ejecutivo")
             st.markdown(f"**Período de análisis:** {fecha_reporte}")
             st.markdown("#### Métricas Clave:")
             
@@ -860,7 +773,7 @@ if df is not None:
                     help="Área con mayor número de propuestas"
                 )
             
-            # Distribución de prioridades (gráfico más compacto)
+            # Distribución de prioridades
             st.markdown("#### 🎯 Distribución de Prioridades")
             priority_col1, priority_col2 = st.columns([1, 2])
             
@@ -975,47 +888,6 @@ if df is not None:
             - Contiene gráficos y tablas de fácil lectura
             - Ideal para compartir con la dirección y stakeholders
             """)
-         %Y')}
-            
-            #### Métricas Clave:
-            - **Total de iniciativas evaluadas:** {total_initiatives}
-            - **Iniciativas de alta prioridad:** {high_priority} ({high_priority/total_initiatives*100:.1f}% del total)
-            - **Puntuación promedio:** {avg_score:.2f}/5.0
-            - **Área más activa:** {top_area}
-            
-            #### Top 3 Iniciativas Recomendadas:
-            """)
-            
-            # Top 3 iniciativas
-            top_3 = df_filtered.nlargest(3, 'Puntuacion_Ponderada')
-            
-            for i, (_, row) in enumerate(top_3.iterrows(), 1):
-                st.markdown(f"""
-                **{i}. {row['Nombre_Iniciativa']}**
-                - Propuesta por: {row['Nombre_Colaborador']} ({row['Area']})
-                - Puntuación: {row['Puntuacion_Ponderada']:.2f}/5.0
-                - Fortalezas: Valor estratégico ({row['Valor_Estrategico']}/5), Impacto ({row['Nivel_Impacto']}/5)
-                """)
-            
-            # Recomendaciones
-            st.markdown("""
-            #### 💡 Recomendaciones:
-            
-            1. **Implementación inmediata:** Priorizar las iniciativas de alta puntuación que requieren recursos mínimos
-            2. **Análisis detallado:** Revisar iniciativas con alto potencial pero baja viabilidad técnica
-            3. **Fomento de la participación:** Incentivar la participación de áreas con menor actividad
-            4. **Seguimiento:** Establecer métricas de seguimiento para las iniciativas implementadas
-            """)
-            
-            # Botón para descargar reporte
-            if st.button("📥 Descargar Datos para Análisis"):
-                csv = df_filtered.to_csv(index=False)
-                st.download_button(
-                    label="⬇️ Descargar CSV",
-                    data=csv,
-                    file_name=f"iniciativas_innovacion_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv"
-                )
     
     else:
         st.warning("No se encontraron datos válidos en el archivo.")
