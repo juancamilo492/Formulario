@@ -29,6 +29,30 @@ import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg')  # Para evitar problemas en servidores sin display
 
+import streamlit as st
+import streamlit_authenticator as stauth
+
+# ===== LOGIN =====
+names = st.secrets["auth"]["names"]
+usernames = st.secrets["auth"]["usernames"]
+passwords = st.secrets["auth"]["passwords"]
+
+authenticator = stauth.Authenticate(
+    names,
+    usernames,
+    passwords,
+    "innovacion_app",
+    "abcdef",
+    cookie_expiry_days=1
+)
+
+name, auth_status, username = authenticator.login("🔐 Iniciar sesión", "main")
+
+if not auth_status:
+    st.warning("Por favor inicia sesión para continuar.")
+    st.stop()
+
+
 # ==========================================
 # CONFIGURACIÓN DE LA PÁGINA
 # ==========================================
