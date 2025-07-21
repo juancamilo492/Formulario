@@ -594,9 +594,9 @@ def main():
             tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
                 "📈 Análisis General", 
                 "🏆 Ranking de Iniciativas", 
-                "📊 Análisis por Área",
+                "📊 Análisis por Área", 
+                "⚙️ Análisis por Proceso",
                 "🔍 Detalle de Iniciativas",
-                "⚙️ Análisis por Proceso", 
                 "📋 Reporte Ejecutivo"
             ])
             
@@ -875,14 +875,42 @@ def main():
                             for i, (_, row) in enumerate(process_initiatives.iterrows(), 1):
                                 priority_class = f"priority-{row['Prioridad'].lower()}"
                                 
-                                nombre_iniciativa = fix_encoding(row['Nombre_Iniciativa'])
-                                nombre_colaborador = fix_encoding(row['Nombre_Colaborador'])
-                                area = fix_encoding(row['Area'])
-                                
-                                st.markdown(f"""
-                                <div class="metric-card {priority_class}">
-                                    <h4>#{i} {nombre_iniciativa}</h4>
-                                    <p><strong>👤 Propuesto por:</strong> {nombre_colaborador} ({area})</p>
+                        # Tabla resumen por proceso
+                        st.subheader("📋 Resumen por Proceso")
+                        st.dataframe(process_analysis, use_container_width=True)
+                        
+                        # Insights por proceso
+                        st.subheader("💡 Insights de Procesos Seleccionados")
+                        
+                        # Proceso con más iniciativas
+                        most_active_process = process_analysis.index[0]
+                        most_initiatives_count = process_analysis.iloc[0]['Num_Iniciativas']
+                        
+                        # Proceso con mejor puntuación promedio
+                        best_scored_process = process_analysis.loc[process_analysis['Puntuacion_Promedio'].idxmax()]
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.info(f"""
+                            **🔥 Proceso más activo:**  
+                            **{most_active_process}** con {int(most_initiatives_count)} iniciativas
+                            """)
+                        
+                        with col2:
+                            st.success(f"""
+                            **⭐ Proceso mejor puntuado:**  
+                            **{best_scored_process.name}** con {best_scored_process['Puntuacion_Promedio']:.2f}/5.0 promedio
+                            """)
+                    
+                    else:
+                        st.warning("❌ No hay procesos disponibles para analizar.")
+                
+                else:
+                    st.warning("❌ No se encontraron datos de procesos para analizar.")
+                
+            else:
+                st.warning("La columna de procesos no está disponible en los datos actuales.")uesto por:</strong> {nombre_colaborador} ({area})</p>
                                     <p><strong>⭐ Puntuación:</strong> {row['Puntuacion_Ponderada']:.2f}/5.0 | 
                                        <strong>🎯 Prioridad:</strong> {row['Prioridad']}</p>
                                 </div>
