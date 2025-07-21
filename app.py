@@ -57,23 +57,69 @@ st.markdown("""
 # Funciones para cargar datos
 @st.cache_data(ttl=300)  # Cache por 5 minutos
 def load_google_sheets_data():
-    """Carga datos directamente desde Google Sheets usando URL pública"""
-    try:
-        # Convertir URL de Google Sheets a CSV exportable
-        csv_url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
-        
-        # Intentar cargar los datos
-        response = requests.get(csv_url, timeout=10)
-        response.raise_for_status()
-        
-        # Leer CSV desde la respuesta
-        csv_data = StringIO(response.text)
-        df = pd.read_csv(csv_data)
-        
-        return df, True, "Conectado exitosamente a Google Sheets"
+    """Carga datos directamente desde Google Sheets usando múltiples métodos"""
     
-    except Exception as e:
-        return pd.DataFrame(), False, f"Error de conexión: {str(e)}"
+    # Método 1: URL directa de exportación (más confiable)
+    urls_to_try = [
+        f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0",
+        f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv",
+        f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&gid=0",
+        f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv"
+    ]
+    
+    for i, csv_url in enumerate(urls_to_try):
+        try:
+            # Headers para evitar bloqueos
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            
+            # Intentar cargar los datos
+            response = requests.get(csv_url, headers=headers, timeout=15)
+            response.raise_for_status()
+            
+            # Verificar que la respuesta no esté vacía
+            if len(response.text.strip()) < 10:
+                continue
+                
+            # Leer CSV desde la respuesta
+            csv_data = StringIO(response.text)
+            df = pd.read_csv(csv_data)
+            
+            # Verificar que el DataFrame tenga datos válidos
+            if len(df) > 0 and len(df.columns) > 5:
+                return df, True, f"Conectado exitosamente (método {i+1})"
+            
+        except Exception as e:
+            if i == len(urls_to_try) - 1:  # Solo mostrar error en el último intento
+                last_error = str(e)
+            continue
+    
+    # Si todos los métodos fallan, intentar método alternativo con requests más permisivo
+    try:
+        import ssl
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        
+        # URL alternativa más simple
+        simple_url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
+        
+        response = requests.get(
+            simple_url,
+            headers={'User-Agent': 'Python-requests'},
+            timeout=20,
+            verify=False  # Ignorar certificados SSL temporalmente
+        )
+        
+        if response.status_code == 200 and len(response.text.strip()) > 10:
+            df = pd.read_csv(StringIO(response.text))
+            if len(df) > 0:
+                return df, True, "Conectado con método alternativo"
+                
+    except Exception:
+        pass
+    
+    return pd.DataFrame(), False, f"No se pudo conectar. Revisa que el Google Sheets sea público. Último error: {last_error if 'last_error' in locals() else 'Conexión fallida'}"
 
 def load_demo_data():
     """Genera datos de demostración realistas basados en la estructura real"""
@@ -190,7 +236,20 @@ def load_demo_data():
     
     return pd.DataFrame(data)
 
-def calculate_scores(df):
+def get_column_name(df, possible_names):
+    """Busca el nombre correcto de columna entre varias posibilidades"""
+    for name in possible_names:
+        if name in df.columns:
+            return name
+    return None
+
+def safe_get_column(df, possible_names, default='N/A'):
+    """Obtiene valores de una columna de forma segura"""
+    col_name = get_column_name(df, possible_names)
+    if col_name:
+        return df[col_name]
+    else:
+        return default
     """Calcula métricas derivadas y clasificaciones"""
     if df.empty:
         return df
@@ -271,9 +330,18 @@ with st.sidebar:
     # Opciones de fuente de datos
     data_source = st.radio(
         "📊 Fuente de datos:",
-        ["🔗 Google Sheets (Automático)", "🧪 Datos de Demostración"],
+        ["🔗 Google Sheets (Automático)", "📁 Subir Archivo CSV", "🧪 Datos de Demostración"],
         help="Google Sheets se conecta automáticamente a tu formulario"
     )
+    
+    # Configuración según la fuente
+    if data_source == "📁 Subir Archivo CSV":
+        st.info("💡 **Cómo obtener el CSV:**\n1. Ve a tu Google Sheets\n2. Archivo → Descargar → CSV\n3. Sube el archivo aquí")
+        uploaded_file = st.file_uploader(
+            "Selecciona tu archivo CSV",
+            type=['csv'],
+            help="Descarga el CSV directamente desde Google Sheets"
+        )
     
     # Estado de conexión
     if data_source == "🔗 Google Sheets (Automático)":
@@ -344,9 +412,25 @@ if data_source == "🔗 Google Sheets (Automático)":
     else:
         st.markdown(f'<div class="connection-status error">❌ {connection_message}</div>', 
                    unsafe_allow_html=True)
-        st.markdown(f'<div class="connection-status warning">⚠️ Usando datos de demostración como respaldo</div>', 
+        st.markdown(f'<div class="connection-status warning">💡 Prueba subiendo el archivo CSV manualmente desde la barra lateral</div>', 
                    unsafe_allow_html=True)
         df_raw = load_demo_data()
+
+elif data_source == "📁 Subir Archivo CSV":
+    if 'uploaded_file' in locals() and uploaded_file is not None:
+        try:
+            df_raw = pd.read_csv(uploaded_file)
+            st.markdown(f'<div class="connection-status success">✅ Archivo CSV cargado exitosamente</div>', 
+                       unsafe_allow_html=True)
+        except Exception as e:
+            st.markdown(f'<div class="connection-status error">❌ Error al leer el archivo: {str(e)}</div>', 
+                       unsafe_allow_html=True)
+            df_raw = load_demo_data()
+    else:
+        st.markdown(f'<div class="connection-status warning">⬆️ Sube tu archivo CSV en la barra lateral</div>', 
+                   unsafe_allow_html=True)
+        df_raw = load_demo_data()
+
 else:
     df_raw = load_demo_data()
     st.markdown(f'<div class="connection-status warning">🧪 Usando datos de demostración</div>', 
@@ -449,7 +533,7 @@ with tab1:
                     opacity=0.8
                 ),
                 name=classification,
-                text=subset.get('Nombre de la idea o iniciativa  ', subset.index).astype(str).str[:25] + '...',
+                text=df[df['Clasificación'] == classification]['Nombre_Iniciativa'].str[:25] + '...',
                 hovertemplate='<b>%{text}</b><br>' +
                              'Impacto: %{y}<br>' +
                              'Facilidad: %{x}<br>' +
@@ -636,18 +720,46 @@ with tab2:
     for idx, row in filtered_df.head(15).iterrows():
         class_color = color_map.get(row['Clasificación'], '#666')
         
-        with st.expander(f"#{row['Ranking']} - {row.get('Nombre de la idea o iniciativa  ', 'Sin título')[:50]}... ({row['Clasificación']})"):
+        with st.expander(f"#{row['Ranking']} - {row['Nombre_Iniciativa'][:50]}... ({row['Clasificación']})"):
             col1, col2, col3 = st.columns([2, 1, 1])
             
             with col1:
-                st.markdown(f"**👤 Propuesto por:** {row.get('Nombre completo', 'N/A')}")
+                st.markdown(f"**👤 Propuesto por:** {row['Nombre_Completo']}")
                 st.markdown(f"**🏢 Área:** {row['Área']}")
-                st.markdown(f"**🎯 Problema a resolver:**")
-                st.write(row.get('¿Qué problema, necesidad u oportunidad busca resolver?  ', 'No especificado'))
-                st.markdown(f"**💡 Propuesta:**")
-                st.write(row.get('¿Cuál es tu propuesta?  ', 'No especificado'))
-                st.markdown(f"**📈 Beneficios esperados:**")
-                st.write(row.get('¿Qué beneficios esperas que genere?  ', 'No especificado'))
+                
+                # Buscar columnas de problema, propuesta y beneficios de forma robusta
+                problema_col = get_column_name(df, [
+                    '¿Qué problema, necesidad u oportunidad busca resolver?',
+                    '¿Qué problema, necesidad u oportunidad busca resolver?  ',
+                    'Problema',
+                    'Necesidad'
+                ])
+                
+                propuesta_col = get_column_name(df, [
+                    '¿Cuál es tu propuesta?',
+                    '¿Cuál es tu propuesta?  ',
+                    'Propuesta',
+                    'Solución'
+                ])
+                
+                beneficios_col = get_column_name(df, [
+                    '¿Qué beneficios esperas que genere?',
+                    '¿Qué beneficios esperas que genere?  ',
+                    'Beneficios',
+                    'Beneficios esperados'
+                ])
+                
+                if problema_col:
+                    st.markdown(f"**🎯 Problema a resolver:**")
+                    st.write(row[problema_col])
+                
+                if propuesta_col:
+                    st.markdown(f"**💡 Propuesta:**")
+                    st.write(row[propuesta_col])
+                
+                if beneficios_col:
+                    st.markdown(f"**📈 Beneficios esperados:**")
+                    st.write(row[beneficios_col])
             
             with col2:
                 st.metric("🏆 Ranking", f"#{row['Ranking']}")
@@ -833,14 +945,18 @@ with tab4:
     
     with col2:
         st.markdown("### 🚀 Quick Wins Recomendados")
-        quick_wins_table = df[df['Clasificación'] == 'Quick Win'].nlargest(10, 'Puntuación Total')[
-            ['Ranking', 'Nombre de la idea o iniciativa  ', 'Área', 'nivel_impacto', 'Facilidad Implementación', 'Puntuación Total']
-        ].reset_index(drop=True)
         
-        if not quick_wins_table.empty:
-            if 'Nombre de la idea o iniciativa  ' in quick_wins_table.columns:
-                quick_wins_table['Iniciativa'] = quick_wins_table['Nombre de la idea o iniciativa  '].str[:30] + '...'
-                quick_wins_table = quick_wins_table.drop('Nombre de la idea o iniciativa  ', axis=1)
+        quick_wins_columns = ['Ranking', 'Nombre_Iniciativa', 'Área', 'nivel_impacto', 'Facilidad Implementación', 'Puntuación Total']
+        available_qw_columns = [col for col in quick_wins_columns if col in df.columns]
+        
+        quick_wins_df = df[df['Clasificación'] == 'Quick Win']
+        
+        if not quick_wins_df.empty and len(available_qw_columns) >= 3:
+            quick_wins_table = quick_wins_df.nlargest(10, 'Puntuación Total')[available_qw_columns].reset_index(drop=True)
+            
+            if 'Nombre_Iniciativa' in quick_wins_table.columns:
+                quick_wins_table['Iniciativa'] = quick_wins_table['Nombre_Iniciativa'].str[:30] + '...'
+                quick_wins_table = quick_wins_table.drop('Nombre_Iniciativa', axis=1)
             
             st.dataframe(quick_wins_table, use_container_width=True, hide_index=True)
         else:
@@ -894,12 +1010,12 @@ with tab4:
     
     with col1:
         # Reporte completo
-        export_df = df[[
-            'Ranking', 'Nombre de la idea o iniciativa  ', 'Nombre completo',
-            'Área', 'Clasificación', 'Puntuación Total', 'valor_estrategico', 
-            'nivel_impacto', 'viabilidad_tecnica', 'costo_beneficio', 
-            'innovacion_disrupcion', 'escalabilidad_transversalidad', 'tiempo_implementacion'
-        ]].sort_values('Ranking')
+        export_columns = ['Ranking', 'Nombre_Iniciativa', 'Nombre_Completo', 'Área', 'Clasificación', 'Puntuación Total', 
+                         'valor_estrategico', 'nivel_impacto', 'viabilidad_tecnica', 'costo_beneficio', 
+                         'innovacion_disrupcion', 'escalabilidad_transversalidad', 'tiempo_implementacion']
+        
+        available_export_columns = [col for col in export_columns if col in df.columns]
+        export_df = df[available_export_columns].sort_values('Ranking')
         
         csv_complete = export_df.to_csv(index=False)
         st.download_button(
@@ -911,12 +1027,24 @@ with tab4:
     
     with col2:
         # Solo Quick Wins
-        quick_wins_export = df[df['Clasificación'] == 'Quick Win'][[
-            'Ranking', 'Nombre de la idea o iniciativa  ', 'Nombre completo',
-            'Área', 'Puntuación Total',
+        quick_wins_export_columns = ['Ranking', 'Nombre_Iniciativa', 'Nombre_Completo', 'Área', 'Puntuación Total']
+        
+        # Agregar columnas de detalles si existen
+        detail_columns = [
+            '¿Qué problema, necesidad u oportunidad busca resolver?',
             '¿Qué problema, necesidad u oportunidad busca resolver?  ',
-            '¿Cuál es tu propuesta?  ', '¿Qué beneficios esperas que genere?  '
-        ]].sort_values('Ranking')
+            '¿Cuál es tu propuesta?',
+            '¿Cuál es tu propuesta?  ',
+            '¿Qué beneficios esperas que genere?',
+            '¿Qué beneficios esperas que genere?  '
+        ]
+        
+        for col in detail_columns:
+            if col in df.columns:
+                quick_wins_export_columns.append(col)
+        
+        available_qw_export_columns = [col for col in quick_wins_export_columns if col in df.columns]
+        quick_wins_export = df[df['Clasificación'] == 'Quick Win'][available_qw_export_columns].sort_values('Ranking')
         
         if not quick_wins_export.empty:
             csv_quick_wins = quick_wins_export.to_csv(index=False)
