@@ -1,3 +1,12 @@
+# -*- coding: utf-8 -*-
+"""
+Analizador de Iniciativas de Innovación
+Sistema de Análisis y Priorización de Propuestas
+"""
+
+# ==========================================
+# IMPORTACIONES
+# ==========================================
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -10,8 +19,8 @@ from io import BytesIO, StringIO
 import base64
 
 # Importaciones para PDF
-from reportlab.lib.pagesizes import letter, A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib import colors
@@ -19,7 +28,9 @@ import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg')  # Para evitar problemas en servidores sin display
 
-# Configuración de la página
+# ==========================================
+# CONFIGURACIÓN DE LA PÁGINA
+# ==========================================
 st.set_page_config(
     page_title="Analizador de Iniciativas de Innovación",
     page_icon="💡",
@@ -27,7 +38,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS personalizado
+# ==========================================
+# CSS PERSONALIZADO
+# ==========================================
 st.markdown("""
 <style>
     .main-header {
@@ -45,34 +58,35 @@ st.markdown("""
         border-left: 4px solid #2d5aa0;
         margin: 0.5rem 0;
     }
-    .priority-high {
+    .priority-alta {
         border-left-color: #28a745 !important;
         background: #d4edda !important;
     }
-    .priority-medium {
+    .priority-media {
         border-left-color: #ffc107 !important;
         background: #fff3cd !important;
     }
-    .priority-low {
+    .priority-baja {
         border-left-color: #dc3545 !important;
         background: #f8d7da !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Función para cargar datos
+# ==========================================
+# FUNCIONES DE CARGA DE DATOS
+# ==========================================
+
 @st.cache_data
 def load_data_from_url():
     """Carga los datos desde Google Sheets"""
     try:
-        # URL directa para descargar el CSV desde Google Sheets
         sheet_id = "1yWHTveQlQEKi7fLdDxxKPLdEjGvD7PaTzAbRYvSBEp0"
         
-        # Intentar diferentes formatos de URL
         urls_to_try = [
             f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid=0",
             f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv",
-            f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=Respuestas de formulario 1"
+            f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv"
         ]
         
         for url in urls_to_try:
@@ -83,8 +97,6 @@ def load_data_from_url():
                 response = requests.get(url, headers=headers)
                 response.raise_for_status()
                 
-                # Leer el contenido como CSV
-                from io import StringIO
                 df = pd.read_csv(StringIO(response.text))
                 
                 if len(df) > 0:
@@ -94,7 +106,7 @@ def load_data_from_url():
             except Exception as e:
                 continue
                 
-        # Si ninguna URL funciona, mostrar instrucciones
+        # Si ninguna URL funciona
         st.error("❌ No se pudieron cargar los datos desde Google Sheets.")
         st.warning("🔧 **Para solucionar este problema:**")
         st.markdown("""
@@ -105,16 +117,13 @@ def load_data_from_url():
            - Seleccionar "Visualizador"
            - Guardar
         
-        2. **Verificar el ID del sheet:**
-           - El ID debe estar entre `/d/` y `/edit` en la URL
-           - Ejemplo: `https://docs.google.com/spreadsheets/d/[ID_AQUI]/edit`
-        
-        3. **Como alternativa, subir el archivo manualmente** usando la opción en la barra lateral.
+        2. **Verificar el ID del sheet en la URL**
+        3. **Como alternativa, subir el archivo manualmente**
         """)
         return None
         
     except Exception as e:
-        st.error(f"Error al cargar datos desde Google Sheets: {str(e)}")
+        st.error(f"Error al cargar datos: {str(e)}")
         return None
 
 @st.cache_data
@@ -130,6 +139,10 @@ def load_data_from_file(uploaded_file):
         st.error(f"Error al cargar el archivo: {str(e)}")
         return None
 
+# ==========================================
+# FUNCIÓN DE PROCESAMIENTO DE DATOS
+# ==========================================
+
 def clean_and_process_data(df):
     """Limpia y procesa los datos"""
     if df is None:
@@ -138,37 +151,48 @@ def clean_and_process_data(df):
     # Crear una copia para trabajar
     df_clean = df.copy()
     
-    # Limpiar nombres de columnas
+    # Limpiar nombres de columnas (quitar espacios al inicio y final)
     df_clean.columns = [col.strip() for col in df_clean.columns]
     
-    # Mapeo de nombres de columnas (para manejar variaciones)
+    # Mapeo exacto de columnas según el archivo
     column_mapping = {
-        'Nombre de la idea o iniciativa  ': 'Nombre_Iniciativa',
-        'Nombre de la idea o iniciativa': 'Nombre_Iniciativa',
+        'Marca temporal': 'Fecha',
         'Nombre completo': 'Nombre_Colaborador',
-        'Selecciona el área o proceso al cual perteneces ': 'Area',
+        'Correo electrónico': 'Correo',
+        'Rol o relación con Alico': 'Rol',
         'Selecciona el área o proceso al cual perteneces': 'Area',
-        '¿Qué problema, necesidad u oportunidad busca resolver?  ': 'Problema',
+        'Nombre de la idea o iniciativa': 'Nombre_Iniciativa',
         '¿Qué problema, necesidad u oportunidad busca resolver?': 'Problema',
-        '¿Cuál es tu propuesta?  ': 'Propuesta',
         '¿Cuál es tu propuesta?': 'Propuesta',
-        '¿Qué beneficios esperas que genere?  ': 'Beneficios',
+        '¿A qué proceso/s crees que se relaciona tu idea?': 'Proceso_Relacionado',
         '¿Qué beneficios esperas que genere?': 'Beneficios',
+        '¿Esta idea la has visto implementada en otro lugar?': 'Vista_Otro_Lugar',
+        'Si tu respuesta anterior fue si, especifica dónde y cómo': 'Donde_Como',
+        '¿Crees que puede implementarse con los recursos actuales?': 'Recursos_Actuales',
         'Valor estratégico': 'Valor_Estrategico',
         'Nivel de impacto': 'Nivel_Impacto',
         'Viabilidad técnica': 'Viabilidad_Tecnica',
         'Costo-beneficio': 'Costo_Beneficio',
-        'Innovación / disrupción ': 'Innovacion_Disrupcion',
         'Innovación / disrupción': 'Innovacion_Disrupcion',
-        'Escalabilidad / transversalidad ': 'Escalabilidad_Transversalidad',
         'Escalabilidad / transversalidad': 'Escalabilidad_Transversalidad',
-        'Tiempo de implementación ': 'Tiempo_Implementacion',
-        'Tiempo de implementación': 'Tiempo_Implementacion',
-        'Marca temporal': 'Fecha'
+        'Tiempo de implementación': 'Tiempo_Implementacion'
     }
     
     # Aplicar mapeo de columnas
     df_clean = df_clean.rename(columns=column_mapping)
+    
+    # Verificar columnas necesarias
+    numeric_columns = ['Valor_Estrategico', 'Nivel_Impacto', 'Viabilidad_Tecnica', 
+                      'Costo_Beneficio', 'Innovacion_Disrupcion', 
+                      'Escalabilidad_Transversalidad', 'Tiempo_Implementacion']
+    
+    required_columns = ['Nombre_Colaborador', 'Nombre_Iniciativa', 'Area'] + numeric_columns
+    
+    missing_columns = [col for col in required_columns if col not in df_clean.columns]
+    
+    if missing_columns:
+        st.error(f"❌ Columnas faltantes: {missing_columns}")
+        return None
     
     # Filtrar registros válidos
     valid_mask = (
@@ -180,34 +204,26 @@ def clean_and_process_data(df):
     df_clean = df_clean[valid_mask].copy()
     
     # Convertir campos numéricos
-    numeric_fields = ['Valor_Estrategico', 'Nivel_Impacto', 'Viabilidad_Tecnica', 
-                     'Costo_Beneficio', 'Innovacion_Disrupcion', 
-                     'Escalabilidad_Transversalidad', 'Tiempo_Implementacion']
-    
-    for field in numeric_fields:
-        if field in df_clean.columns:
-            df_clean[field] = pd.to_numeric(df_clean[field], errors='coerce').fillna(0)
+    for field in numeric_columns:
+        df_clean[field] = pd.to_numeric(df_clean[field], errors='coerce').fillna(0)
     
     # Calcular métricas derivadas
     df_clean['Puntuacion_Total'] = (
-        df_clean['Valor_Estrategico'] + 
-        df_clean['Nivel_Impacto'] + 
-        df_clean['Viabilidad_Tecnica'] + 
-        df_clean['Costo_Beneficio'] + 
-        df_clean['Innovacion_Disrupcion'] + 
-        df_clean['Escalabilidad_Transversalidad'] + 
+        df_clean['Valor_Estrategico'] + df_clean['Nivel_Impacto'] + 
+        df_clean['Viabilidad_Tecnica'] + df_clean['Costo_Beneficio'] + 
+        df_clean['Innovacion_Disrupcion'] + df_clean['Escalabilidad_Transversalidad'] + 
         df_clean['Tiempo_Implementacion']
     )
     
-    # Calcular puntuación ponderada (criterio de priorización)
+    # Calcular puntuación ponderada
     df_clean['Puntuacion_Ponderada'] = (
-        df_clean['Valor_Estrategico'] * 0.20 +  # 20% Valor estratégico
-        df_clean['Nivel_Impacto'] * 0.20 +      # 20% Nivel de impacto
-        df_clean['Viabilidad_Tecnica'] * 0.15 + # 15% Viabilidad técnica
-        df_clean['Costo_Beneficio'] * 0.15 +    # 15% Costo-beneficio
-        df_clean['Innovacion_Disrupcion'] * 0.10 + # 10% Innovación
+        df_clean['Valor_Estrategico'] * 0.20 +      # 20% Valor estratégico
+        df_clean['Nivel_Impacto'] * 0.20 +          # 20% Nivel de impacto
+        df_clean['Viabilidad_Tecnica'] * 0.15 +     # 15% Viabilidad técnica
+        df_clean['Costo_Beneficio'] * 0.15 +        # 15% Costo-beneficio
+        df_clean['Innovacion_Disrupcion'] * 0.10 +  # 10% Innovación
         df_clean['Escalabilidad_Transversalidad'] * 0.10 + # 10% Escalabilidad
-        df_clean['Tiempo_Implementacion'] * 0.10   # 10% Tiempo (más rápido = mejor)
+        df_clean['Tiempo_Implementacion'] * 0.10    # 10% Tiempo
     )
     
     # Categorizar prioridad
@@ -221,17 +237,25 @@ def clean_and_process_data(df):
     
     df_clean['Prioridad'] = df_clean['Puntuacion_Ponderada'].apply(categorizar_prioridad)
     
-    # Calcular índice de facilidad de implementación
+    # Calcular facilidad de implementación
     df_clean['Facilidad_Implementacion'] = (
-        (df_clean['Viabilidad_Tecnica'] + df_clean['Costo_Beneficio'] + df_clean['Tiempo_Implementacion']) / 3
+        (df_clean['Viabilidad_Tecnica'] + df_clean['Costo_Beneficio'] + 
+         df_clean['Tiempo_Implementacion']) / 3
     )
     
+    st.success(f"✅ Datos procesados exitosamente: {len(df_clean)} registros válidos")
+    
     return df_clean
+
+# ==========================================
+# FUNCIÓN PARA GENERAR PDF
+# ==========================================
 
 def generate_pdf_report(df_filtered):
     """Genera un reporte ejecutivo en PDF profesional"""
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18)
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, 
+                          topMargin=72, bottomMargin=18)
     
     # Estilos
     styles = getSampleStyleSheet()
@@ -283,13 +307,14 @@ def generate_pdf_report(df_filtered):
     
     elements.append(Paragraph("RESUMEN EJECUTIVO", heading_style))
     
+    # Tabla de resumen
     summary_data = [
         ['Métrica', 'Valor', 'Observaciones'],
-        ['Total de iniciativas evaluadas', str(total_initiatives), 'Propuestas recibidas en el período'],
-        ['Iniciativas de alta prioridad', f"{high_priority} ({high_priority/total_initiatives*100:.1f}%)", 'Recomendadas para implementación inmediata'],
-        ['Iniciativas de prioridad media', f"{medium_priority} ({medium_priority/total_initiatives*100:.1f}%)", 'Requieren análisis adicional'],
-        ['Iniciativas de prioridad baja', f"{low_priority} ({low_priority/total_initiatives*100:.1f}%)", 'Para revisión a largo plazo'],
-        ['Puntuación promedio general', f"{avg_score:.2f}/5.0", 'Calidad general de las propuestas'],
+        ['Total de iniciativas', str(total_initiatives), 'Propuestas recibidas'],
+        ['Alta prioridad', f"{high_priority} ({high_priority/total_initiatives*100:.1f}%)", 'Para implementación inmediata'],
+        ['Prioridad media', f"{medium_priority} ({medium_priority/total_initiatives*100:.1f}%)", 'Requieren análisis adicional'],
+        ['Prioridad baja', f"{low_priority} ({low_priority/total_initiatives*100:.1f}%)", 'Para revisión a largo plazo'],
+        ['Puntuación promedio', f"{avg_score:.2f}/5.0", 'Calidad general de propuestas'],
     ]
     
     summary_table = Table(summary_data, colWidths=[2.5*inch, 1.5*inch, 2.5*inch])
@@ -316,611 +341,625 @@ def generate_pdf_report(df_filtered):
     
     for i, (_, row) in enumerate(top_5.iterrows(), 1):
         elements.append(Paragraph(f"<b>{i}. {row['Nombre_Iniciativa']}</b>", normal_style))
-        elements.append(Paragraph(f"<b>Propuesta por:</b> {row['Nombre_Colaborador']} ({row['Area']})", normal_style))
-        elements.append(Paragraph(f"<b>Puntuación:</b> {row['Puntuacion_Ponderada']:.2f}/5.0 - <b>Prioridad:</b> {row['Prioridad']}", normal_style))
+        elements.append(Paragraph(f"<b>Propuesto por:</b> {row['Nombre_Colaborador']} ({row['Area']})", normal_style))
+        elements.append(Paragraph(f"<b>Puntuación:</b> {row['Puntuacion_Ponderada']:.2f}/5.0", normal_style))
         
-        # Mostrar fortalezas principales
-        metrics = {
-            'Valor_Estrategico': 'Valor Estratégico',
-            'Nivel_Impacto': 'Nivel de Impacto',
-            'Viabilidad_Tecnica': 'Viabilidad Técnica',
-            'Costo_Beneficio': 'Costo-Beneficio',
-            'Innovacion_Disrupcion': 'Innovación',
-            'Escalabilidad_Transversalidad': 'Escalabilidad',
-            'Tiempo_Implementacion': 'Tiempo de Implementación'
-        }
-        
-        fortalezas = []
-        for metric_key, metric_name in metrics.items():
-            if row[metric_key] >= 4:
-                fortalezas.append(f"{metric_name} ({row[metric_key]}/5)")
-        
-        if fortalezas:
-            elements.append(Paragraph(f"<b>Fortalezas:</b> {', '.join(fortalezas)}", normal_style))
-        
-        problema = row.get('Problema', 'No especificado')
-        if len(problema) > 100:
-            problema = problema[:100] + "..."
-        elements.append(Paragraph(f"<b>Problema que resuelve:</b> {problema}", normal_style))
+        problema = str(row.get('Problema', 'No especificado'))[:100]
+        elements.append(Paragraph(f"<b>Problema:</b> {problema}...", normal_style))
         elements.append(Spacer(1, 10))
+    
+    # Recomendaciones
+    elements.append(Paragraph("RECOMENDACIONES ESTRATÉGICAS", heading_style))
+    
+    recomendaciones = [
+        f"Priorizar las {high_priority} iniciativas de alta puntuación",
+        f"Realizar análisis detallado de las {medium_priority} iniciativas de prioridad media",
+        "Establecer cronograma de implementación con hitos específicos",
+        "Definir métricas de seguimiento para iniciativas implementadas"
+    ]
+    
+    for rec in recomendaciones:
+        elements.append(Paragraph(f"• {rec}", normal_style))
     
     # Construir PDF
     doc.build(elements)
     buffer.seek(0)
     return buffer
 
-# Header principal
-st.markdown('<div class="main-header"><h1>💡 Analizador de Iniciativas de Innovación</h1><p>Sistema de Análisis y Priorización de Propuestas</p></div>', unsafe_allow_html=True)
+# ==========================================
+# INTERFAZ PRINCIPAL
+# ==========================================
 
-# Sidebar para configuración
-st.sidebar.header("⚙️ Configuración")
-
-# Opción para cargar datos
-data_source = st.sidebar.radio(
-    "Fuente de datos:",
-    ["Google Sheets (Automático)", "Subir archivo"]
-)
-
-# Cargar datos según la opción seleccionada
-df = None
-if data_source == "Google Sheets (Automático)":
-    if st.sidebar.button("🔄 Actualizar datos"):
-        st.cache_data.clear()
-    df = load_data_from_url()
-else:
-    uploaded_file = st.sidebar.file_uploader(
-        "Subir archivo Excel/CSV",
-        type=['xlsx', 'xls', 'csv'],
-        help="Sube tu archivo de iniciativas"
-    )
-    if uploaded_file is not None:
-        df = load_data_from_file(uploaded_file)
-
-# Procesar datos si están disponibles
-if df is not None:
-    df_processed = clean_and_process_data(df)
+def main():
+    """Función principal de la aplicación"""
     
-    if df_processed is not None and len(df_processed) > 0:
+    # Header principal
+    st.markdown('''
+    <div class="main-header">
+        <h1>💡 Analizador de Iniciativas de Innovación</h1>
+        <p>Sistema de Análisis y Priorización de Propuestas</p>
+    </div>
+    ''', unsafe_allow_html=True)
+    
+    # ==========================================
+    # SIDEBAR - CONFIGURACIÓN
+    # ==========================================
+    
+    st.sidebar.header("⚙️ Configuración")
+    
+    # Opción para cargar datos
+    data_source = st.sidebar.radio(
+        "Fuente de datos:",
+        ["Google Sheets (Automático)", "Subir archivo"]
+    )
+    
+    # Cargar datos
+    df = None
+    if data_source == "Google Sheets (Automático)":
+        if st.sidebar.button("🔄 Actualizar datos"):
+            st.cache_data.clear()
+        df = load_data_from_url()
+    else:
+        uploaded_file = st.sidebar.file_uploader(
+            "Subir archivo Excel/CSV",
+            type=['xlsx', 'xls', 'csv'],
+            help="Sube tu archivo de iniciativas"
+        )
+        if uploaded_file is not None:
+            df = load_data_from_file(uploaded_file)
+    
+    # ==========================================
+    # PROCESAMIENTO DE DATOS
+    # ==========================================
+    
+    if df is not None:
+        df_processed = clean_and_process_data(df)
         
-        # Filtros en sidebar
-        st.sidebar.subheader("🔍 Filtros")
-        
-        # Filtro por área
-        areas_disponibles = ['Todas'] + sorted(df_processed['Area'].unique().tolist())
-        area_selected = st.sidebar.selectbox("Área:", areas_disponibles)
-        
-        # Filtro por prioridad
-        prioridades = ['Todas'] + sorted(df_processed['Prioridad'].unique().tolist())
-        prioridad_selected = st.sidebar.selectbox("Prioridad:", prioridades)
-        
-        # Aplicar filtros
-        df_filtered = df_processed.copy()
-        if area_selected != 'Todas':
-            df_filtered = df_filtered[df_filtered['Area'] == area_selected]
-        if prioridad_selected != 'Todas':
-            df_filtered = df_filtered[df_filtered['Prioridad'] == prioridad_selected]
-        
-        # Métricas principales
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric(
-                label="📊 Total de Iniciativas",
-                value=len(df_filtered),
-                delta=f"de {len(df_processed)} totales"
-            )
-        
-        with col2:
-            avg_score = df_filtered['Puntuacion_Ponderada'].mean()
-            st.metric(
-                label="⭐ Puntuación Promedio",
-                value=f"{avg_score:.2f}",
-                delta="(escala 0-5)"
-            )
-        
-        with col3:
-            high_priority = len(df_filtered[df_filtered['Prioridad'] == 'Alta'])
-            st.metric(
-                label="🚀 Alta Prioridad",
-                value=high_priority,
-                delta=f"{high_priority/len(df_filtered)*100:.1f}%" if len(df_filtered) > 0 else "0%"
-            )
-        
-        with col4:
-            areas_activas = df_filtered['Area'].nunique()
-            st.metric(
-                label="🏢 Áreas Participantes",
-                value=areas_activas,
-                delta=f"de {df_processed['Area'].nunique()} totales"
-            )
-        
-        # Pestañas principales
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "📈 Análisis General", 
-            "🏆 Ranking de Iniciativas", 
-            "📊 Análisis por Área", 
-            "🔍 Detalle de Iniciativas",
-            "📋 Reporte Ejecutivo"
-        ])
-        
-        with tab1:
-            col1, col2 = st.columns(2)
+        if df_processed is not None and len(df_processed) > 0:
+            
+            # ==========================================
+            # FILTROS SIDEBAR
+            # ==========================================
+            
+            st.sidebar.subheader("🔍 Filtros")
+            
+            # Filtro por área
+            areas_disponibles = ['Todas'] + sorted(df_processed['Area'].unique().tolist())
+            area_selected = st.sidebar.selectbox("Área:", areas_disponibles)
+            
+            # Filtro por prioridad
+            prioridades = ['Todas'] + sorted(df_processed['Prioridad'].unique().tolist())
+            prioridad_selected = st.sidebar.selectbox("Prioridad:", prioridades)
+            
+            # Aplicar filtros
+            df_filtered = df_processed.copy()
+            if area_selected != 'Todas':
+                df_filtered = df_filtered[df_filtered['Area'] == area_selected]
+            if prioridad_selected != 'Todas':
+                df_filtered = df_filtered[df_filtered['Prioridad'] == prioridad_selected]
+            
+            # ==========================================
+            # MÉTRICAS PRINCIPALES
+            # ==========================================
+            
+            col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                # Gráfico de radar promedio
-                if len(df_filtered) > 0:
-                    metrics = ['Valor_Estrategico', 'Nivel_Impacto', 'Viabilidad_Tecnica', 
-                              'Costo_Beneficio', 'Innovacion_Disrupcion', 
-                              'Escalabilidad_Transversalidad', 'Tiempo_Implementacion']
-                    
-                    avg_values = [df_filtered[metric].mean() for metric in metrics]
-                    
-                    fig_radar = go.Figure()
-                    
-                    fig_radar.add_trace(go.Scatterpolar(
-                        r=avg_values,
-                        theta=['Valor Estratégico', 'Nivel Impacto', 'Viabilidad Técnica',
-                               'Costo-Beneficio', 'Innovación', 'Escalabilidad', 'Tiempo Impl.'],
-                        fill='toself',
-                        name='Promedio General',
-                        line=dict(color='#2d5aa0')
-                    ))
-                    
-                    fig_radar.update_layout(
-                        polar=dict(
-                            radialaxis=dict(visible=True, range=[0, 5])
-                        ),
-                        showlegend=False,
-                        title="Perfil Promedio de Iniciativas"
-                    )
-                    
-                    st.plotly_chart(fig_radar, use_container_width=True)
+                st.metric(
+                    label="📊 Total de Iniciativas",
+                    value=len(df_filtered),
+                    delta=f"de {len(df_processed)} totales"
+                )
             
             with col2:
-                # Distribución por prioridad
-                priority_counts = df_filtered['Prioridad'].value_counts()
-                
-                fig_pie = px.pie(
-                    values=priority_counts.values,
-                    names=priority_counts.index,
-                    title="Distribución por Prioridad",
-                    color_discrete_map={'Alta': '#28a745', 'Media': '#ffc107', 'Baja': '#dc3545'}
+                avg_score = df_filtered['Puntuacion_Ponderada'].mean()
+                st.metric(
+                    label="⭐ Puntuación Promedio",
+                    value=f"{avg_score:.2f}",
+                    delta="(escala 0-5)"
                 )
-                
-                st.plotly_chart(fig_pie, use_container_width=True)
             
-            # Histograma de puntuaciones
-            fig_hist = px.histogram(
-                df_filtered,
-                x='Puntuacion_Ponderada',
-                nbins=20,
-                title="Distribución de Puntuaciones Ponderadas",
-                labels={'Puntuacion_Ponderada': 'Puntuación Ponderada', 'count': 'Número de Iniciativas'}
-            )
-            fig_hist.update_layout(showlegend=False)
-            st.plotly_chart(fig_hist, use_container_width=True)
-        
-        with tab2:
-            st.subheader("🏆 Ranking de Iniciativas")
-            
-            # Top iniciativas
-            df_ranked = df_filtered.sort_values('Puntuacion_Ponderada', ascending=False).reset_index(drop=True)
-            
-            for idx, row in df_ranked.head(10).iterrows():
-                priority_class = f"priority-{row['Prioridad'].lower()}"
-                
-                st.markdown(f"""
-                <div class="metric-card {priority_class}">
-                    <h4>#{idx+1} {row['Nombre_Iniciativa']}</h4>
-                    <p><strong>Propuesto por:</strong> {row['Nombre_Colaborador']} ({row['Area']})</p>
-                    <p><strong>Puntuación:</strong> {row['Puntuacion_Ponderada']:.2f}/5.0 | 
-                       <strong>Prioridad:</strong> {row['Prioridad']}</p>
-                    <p><strong>Problema:</strong> {row.get('Problema', 'No especificado')[:100]}...</p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            # Matriz de comparación
-            if len(df_filtered) > 1:
-                st.subheader("📊 Matriz de Análisis: Impacto vs Facilidad de Implementación")
-                
-                fig_scatter = px.scatter(
-                    df_filtered,
-                    x='Facilidad_Implementacion',
-                    y='Nivel_Impacto',
-                    size='Puntuacion_Ponderada',
-                    color='Prioridad',
-                    hover_name='Nombre_Iniciativa',
-                    hover_data=['Nombre_Colaborador', 'Area'],
-                    title="Matriz de Priorización",
-                    labels={
-                        'Facilidad_Implementacion': 'Facilidad de Implementación',
-                        'Nivel_Impacto': 'Nivel de Impacto'
-                    },
-                    color_discrete_map={'Alta': '#28a745', 'Media': '#ffc107', 'Baja': '#dc3545'}
+            with col3:
+                high_priority = len(df_filtered[df_filtered['Prioridad'] == 'Alta'])
+                st.metric(
+                    label="🚀 Alta Prioridad",
+                    value=high_priority,
+                    delta=f"{high_priority/len(df_filtered)*100:.1f}%" if len(df_filtered) > 0 else "0%"
                 )
-                
-                # Añadir líneas de referencia
-                fig_scatter.add_hline(y=2.5, line_dash="dash", line_color="gray", annotation_text="Impacto Medio")
-                fig_scatter.add_vline(x=2.5, line_dash="dash", line_color="gray", annotation_text="Facilidad Media")
-                
-                st.plotly_chart(fig_scatter, use_container_width=True)
-        
-        with tab3:
-            st.subheader("📊 Análisis por Área")
             
-            # Análisis por área
-            area_analysis = df_filtered.groupby('Area').agg({
-                'Puntuacion_Ponderada': ['count', 'mean', 'std'],
-                'Valor_Estrategico': 'mean',
-                'Nivel_Impacto': 'mean',
-                'Viabilidad_Tecnica': 'mean',
-                'Costo_Beneficio': 'mean',
-                'Innovacion_Disrupcion': 'mean',
-                'Escalabilidad_Transversalidad': 'mean',
-                'Tiempo_Implementacion': 'mean'
-            }).round(2)
-            
-            area_analysis.columns = ['Num_Iniciativas', 'Puntuacion_Promedio', 'Desv_Estandar',
-                                   'Val_Estrategico', 'Impacto', 'Viabilidad', 'Costo_Beneficio',
-                                   'Innovacion', 'Escalabilidad', 'Tiempo_Impl']
-            
-            # Gráfico de barras por área
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                fig_bar = px.bar(
-                    x=area_analysis.index,
-                    y=area_analysis['Num_Iniciativas'],
-                    title="Número de Iniciativas por Área",
-                    labels={'x': 'Área', 'y': 'Número de Iniciativas'}
+            with col4:
+                areas_activas = df_filtered['Area'].nunique()
+                st.metric(
+                    label="🏢 Áreas Participantes",
+                    value=areas_activas,
+                    delta=f"de {df_processed['Area'].nunique()} totales"
                 )
-                st.plotly_chart(fig_bar, use_container_width=True)
             
-            with col2:
-                fig_bar2 = px.bar(
-                    x=area_analysis.index,
-                    y=area_analysis['Puntuacion_Promedio'],
-                    title="Puntuación Promedio por Área",
-                    labels={'x': 'Área', 'y': 'Puntuación Promedio'}
-                )
-                st.plotly_chart(fig_bar2, use_container_width=True)
+            # ==========================================
+            # PESTAÑAS PRINCIPALES
+            # ==========================================
             
-            # Heatmap de métricas por área
-            if len(area_analysis) > 1:
-                metrics_cols = ['Val_Estrategico', 'Impacto', 'Viabilidad', 'Costo_Beneficio',
-                               'Innovacion', 'Escalabilidad', 'Tiempo_Impl']
-                
-                fig_heatmap = px.imshow(
-                    area_analysis[metrics_cols].T,
-                    labels=dict(x="Área", y="Métrica", color="Puntuación"),
-                    x=area_analysis.index,
-                    y=['Valor Estratégico', 'Impacto', 'Viabilidad', 'Costo-Beneficio',
-                       'Innovación', 'Escalabilidad', 'Tiempo Impl.'],
-                    title="Mapa de Calor: Métricas por Área",
-                    aspect="auto"
-                )
-                
-                st.plotly_chart(fig_heatmap, use_container_width=True)
+            tab1, tab2, tab3, tab4, tab5 = st.tabs([
+                "📈 Análisis General", 
+                "🏆 Ranking de Iniciativas", 
+                "📊 Análisis por Área", 
+                "🔍 Detalle de Iniciativas",
+                "📋 Reporte Ejecutivo"
+            ])
             
-            # Tabla resumen
-            st.subheader("📋 Resumen por Área")
-            st.dataframe(area_analysis, use_container_width=True)
-        
-        with tab4:
-            st.subheader("🔍 Detalle de Iniciativas")
+            # ==========================================
+            # TAB 1: ANÁLISIS GENERAL
+            # ==========================================
             
-            # Selector de iniciativa
-            iniciativas_list = df_filtered['Nombre_Iniciativa'].tolist()
-            
-            if iniciativas_list:
-                selected_initiative = st.selectbox(
-                    "Selecciona una iniciativa para ver detalles:",
-                    iniciativas_list
-                )
-                
-                # Mostrar detalles de la iniciativa seleccionada
-                init_data = df_filtered[df_filtered['Nombre_Iniciativa'] == selected_initiative].iloc[0]
-                
-                col1, col2 = st.columns([2, 1])
+            with tab1:
+                col1, col2 = st.columns(2)
                 
                 with col1:
-                    st.markdown(f"""
-                    ### {init_data['Nombre_Iniciativa']}
-                    
-                    **👤 Propuesta por:** {init_data['Nombre_Colaborador']}  
-                    **🏢 Área:** {init_data['Area']}  
-                    **⭐ Puntuación Ponderada:** {init_data['Puntuacion_Ponderada']:.2f}/5.0  
-                    **🎯 Prioridad:** {init_data['Prioridad']}
-                    
-                    **📝 Problema que resuelve:**
-                    {init_data.get('Problema', 'No especificado')}
-                    
-                    **💡 Propuesta:**
-                    {init_data.get('Propuesta', 'No especificada')}
-                    
-                    **✅ Beneficios esperados:**
-                    {init_data.get('Beneficios', 'No especificados')}
-                    """)
-                
-                with col2:
-                    # Gráfico radar individual
-                    metrics = ['Valor_Estrategico', 'Nivel_Impacto', 'Viabilidad_Tecnica', 
-                              'Costo_Beneficio', 'Innovacion_Disrupcion', 
-                              'Escalabilidad_Transversalidad', 'Tiempo_Implementacion']
-                    
-                    values = [init_data[metric] for metric in metrics]
-                    
-                    fig_individual = go.Figure()
-                    
-                    fig_individual.add_trace(go.Scatterpolar(
-                        r=values,
-                        theta=['Val. Estratégico', 'Impacto', 'Viabilidad',
-                               'Costo-Beneficio', 'Innovación', 'Escalabilidad', 'Tiempo'],
-                        fill='toself',
-                        name=selected_initiative,
-                        line=dict(color='#2d5aa0')
-                    ))
-                    
-                    fig_individual.update_layout(
-                        polar=dict(radialaxis=dict(visible=True, range=[0, 5])),
-                        showlegend=False,
-                        title="Perfil de la Iniciativa"
-                    )
-                    
-                    st.plotly_chart(fig_individual, use_container_width=True)
-                
-                # Métricas detalladas
-                st.subheader("📊 Métricas Detalladas")
-                
-                col1, col2, col3, col4 = st.columns(4)
-                
-                with col1:
-                    st.metric("Valor Estratégico", f"{init_data['Valor_Estrategico']}/5")
-                    st.metric("Nivel de Impacto", f"{init_data['Nivel_Impacto']}/5")
-                
-                with col2:
-                    st.metric("Viabilidad Técnica", f"{init_data['Viabilidad_Tecnica']}/5")
-                    st.metric("Costo-Beneficio", f"{init_data['Costo_Beneficio']}/5")
-                
-                with col3:
-                    st.metric("Innovación", f"{init_data['Innovacion_Disrupcion']}/5")
-                    st.metric("Escalabilidad", f"{init_data['Escalabilidad_Transversalidad']}/5")
-                
-                with col4:
-                    st.metric("Tiempo Implementación", f"{init_data['Tiempo_Implementacion']}/5")
-                    st.metric("Puntuación Total", f"{init_data['Puntuacion_Total']}/35")
-        
-        with tab5:
-            st.subheader("📋 Reporte Ejecutivo")
-            
-            # Botones en la parte superior
-            col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
-            
-            with col_btn1:
-                # Botón para descargar reporte PDF
-                if st.button("📄 Generar Reporte PDF", type="primary"):
-                    try:
-                        with st.spinner("Generando reporte PDF..."):
-                            pdf_buffer = generate_pdf_report(df_filtered)
-                            
-                        st.download_button(
-                            label="⬇️ Descargar Reporte PDF",
-                            data=pdf_buffer,
-                            file_name=f"reporte_ejecutivo_innovacion_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-                            mime="application/pdf"
-                        )
-                        st.success("✅ Reporte PDF generado exitosamente!")
+                    # Gráfico de radar promedio
+                    if len(df_filtered) > 0:
+                        metrics = ['Valor_Estrategico', 'Nivel_Impacto', 'Viabilidad_Tecnica', 
+                                  'Costo_Beneficio', 'Innovacion_Disrupcion', 
+                                  'Escalabilidad_Transversalidad', 'Tiempo_Implementacion']
                         
-                    except Exception as e:
-                        st.error(f"Error al generar PDF: {str(e)}")
-                        st.info("💡 Tip: Asegúrate de que todas las dependencias estén instaladas correctamente")
-            
-            with col_btn2:
-                # Botón para descargar datos CSV
-                if st.button("📊 Descargar Datos CSV"):
-                    csv = df_filtered.to_csv(index=False)
-                    st.download_button(
-                        label="⬇️ Descargar CSV",
-                        data=csv,
-                        file_name=f"iniciativas_innovacion_{datetime.now().strftime('%Y%m%d')}.csv",
-                        mime="text/csv"
+                        avg_values = [df_filtered[metric].mean() for metric in metrics]
+                        
+                        fig_radar = go.Figure()
+                        fig_radar.add_trace(go.Scatterpolar(
+                            r=avg_values,
+                            theta=['Valor Estratégico', 'Nivel Impacto', 'Viabilidad Técnica',
+                                   'Costo-Beneficio', 'Innovación', 'Escalabilidad', 'Tiempo Impl.'],
+                            fill='toself',
+                            name='Promedio General',
+                            line=dict(color='#2d5aa0')
+                        ))
+                        
+                        fig_radar.update_layout(
+                            polar=dict(radialaxis=dict(visible=True, range=[0, 5])),
+                            showlegend=False,
+                            title="Perfil Promedio de Iniciativas"
+                        )
+                        
+                        st.plotly_chart(fig_radar, use_container_width=True)
+                
+                with col2:
+                    # Distribución por prioridad
+                    priority_counts = df_filtered['Prioridad'].value_counts()
+                    
+                    fig_pie = px.pie(
+                        values=priority_counts.values,
+                        names=priority_counts.index,
+                        title="Distribución por Prioridad",
+                        color_discrete_map={'Alta': '#28a745', 'Media': '#ffc107', 'Baja': '#dc3545'}
                     )
-            
-            st.markdown("---")
-            
-            # Resumen ejecutivo
-            total_initiatives = len(df_filtered)
-            high_priority = len(df_filtered[df_filtered['Prioridad'] == 'Alta'])
-            medium_priority = len(df_filtered[df_filtered['Prioridad'] == 'Media'])
-            low_priority = len(df_filtered[df_filtered['Prioridad'] == 'Baja'])
-            avg_score = df_filtered['Puntuacion_Ponderada'].mean()
-            top_area = df_filtered['Area'].value_counts().index[0] if len(df_filtered) > 0 else "N/A"
-            
-            fecha_reporte = datetime.now().strftime('%B %Y')
-            st.markdown("### 📊 Resumen Ejecutivo")
-            st.markdown(f"**Período de análisis:** {fecha_reporte}")
-            st.markdown("#### Métricas Clave:")
-            
-            # Métricas en columnas
-            met_col1, met_col2, met_col3, met_col4 = st.columns(4)
-            
-            with met_col1:
-                st.metric(
-                    label="Total Iniciativas",
-                    value=total_initiatives,
-                    help="Número total de propuestas evaluadas"
+                    
+                    st.plotly_chart(fig_pie, use_container_width=True)
+                
+                # Histograma de puntuaciones
+                fig_hist = px.histogram(
+                    df_filtered,
+                    x='Puntuacion_Ponderada',
+                    nbins=20,
+                    title="Distribución de Puntuaciones Ponderadas",
+                    labels={'Puntuacion_Ponderada': 'Puntuación Ponderada', 'count': 'Número de Iniciativas'}
                 )
+                fig_hist.update_layout(showlegend=False)
+                st.plotly_chart(fig_hist, use_container_width=True)
             
-            with met_col2:
-                st.metric(
-                    label="Alta Prioridad",
-                    value=f"{high_priority}",
-                    delta=f"{high_priority/total_initiatives*100:.1f}%" if total_initiatives > 0 else "0%",
-                    help="Iniciativas recomendadas para implementación inmediata"
-                )
+            # ==========================================
+            # TAB 2: RANKING DE INICIATIVAS
+            # ==========================================
             
-            with met_col3:
-                st.metric(
-                    label="Puntuación Promedio",
-                    value=f"{avg_score:.2f}/5.0",
-                    help="Calidad general de las propuestas"
-                )
-            
-            with met_col4:
-                st.metric(
-                    label="Área Más Activa",
-                    value=top_area,
-                    help="Área con mayor número de propuestas"
-                )
-            
-            # Distribución de prioridades
-            st.markdown("#### 🎯 Distribución de Prioridades")
-            priority_col1, priority_col2 = st.columns([1, 2])
-            
-            with priority_col1:
-                priority_data = {
-                    'Prioridad': ['Alta', 'Media', 'Baja'],
-                    'Cantidad': [high_priority, medium_priority, low_priority],
-                    'Porcentaje': [
-                        f"{high_priority/total_initiatives*100:.1f}%" if total_initiatives > 0 else "0%",
-                        f"{medium_priority/total_initiatives*100:.1f}%" if total_initiatives > 0 else "0%",
-                        f"{low_priority/total_initiatives*100:.1f}%" if total_initiatives > 0 else "0%"
-                    ]
-                }
-                st.dataframe(pd.DataFrame(priority_data), hide_index=True)
-            
-            with priority_col2:
-                if total_initiatives > 0:
-                    fig_priority_pie = px.pie(
-                        values=[high_priority, medium_priority, low_priority],
-                        names=['Alta', 'Media', 'Baja'],
-                        color_discrete_map={'Alta': '#28a745', 'Media': '#ffc107', 'Baja': '#dc3545'},
-                        height=300
+            with tab2:
+                st.subheader("🏆 Ranking de Iniciativas")
+                
+                # Top iniciativas
+                df_ranked = df_filtered.sort_values('Puntuacion_Ponderada', ascending=False).reset_index(drop=True)
+                
+                for idx, row in df_ranked.head(10).iterrows():
+                    priority_class = f"priority-{row['Prioridad'].lower()}"
+                    
+                    st.markdown(f"""
+                    <div class="metric-card {priority_class}">
+                        <h4>#{idx+1} {row['Nombre_Iniciativa']}</h4>
+                        <p><strong>Propuesto por:</strong> {row['Nombre_Colaborador']} ({row['Area']})</p>
+                        <p><strong>Puntuación:</strong> {row['Puntuacion_Ponderada']:.2f}/5.0 | 
+                           <strong>Prioridad:</strong> {row['Prioridad']}</p>
+                        <p><strong>Problema:</strong> {str(row.get('Problema', 'No especificado'))[:100]}...</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # Matriz de comparación
+                if len(df_filtered) > 1:
+                    st.subheader("📊 Matriz de Análisis: Impacto vs Facilidad de Implementación")
+                    
+                    fig_scatter = px.scatter(
+                        df_filtered,
+                        x='Facilidad_Implementacion',
+                        y='Nivel_Impacto',
+                        size='Puntuacion_Ponderada',
+                        color='Prioridad',
+                        hover_name='Nombre_Iniciativa',
+                        hover_data=['Nombre_Colaborador', 'Area'],
+                        title="Matriz de Priorización",
+                        labels={
+                            'Facilidad_Implementacion': 'Facilidad de Implementación',
+                            'Nivel_Impacto': 'Nivel de Impacto'
+                        },
+                        color_discrete_map={'Alta': '#28a745', 'Media': '#ffc107', 'Baja': '#dc3545'}
                     )
-                    fig_priority_pie.update_traces(textposition='inside', textinfo='percent+label')
-                    fig_priority_pie.update_layout(showlegend=False, margin=dict(t=0, b=0, l=0, r=0))
-                    st.plotly_chart(fig_priority_pie, use_container_width=True)
+                    
+                    # Líneas de referencia
+                    fig_scatter.add_hline(y=2.5, line_dash="dash", line_color="gray")
+                    fig_scatter.add_vline(x=2.5, line_dash="dash", line_color="gray")
+                    
+                    st.plotly_chart(fig_scatter, use_container_width=True)
             
-            st.markdown("#### 🏆 Top 3 Iniciativas Recomendadas")
+            # ==========================================
+            # TAB 3: ANÁLISIS POR ÁREA
+            # ==========================================
             
-            # Top 3 iniciativas con diseño mejorado
-            top_3 = df_filtered.nlargest(3, 'Puntuacion_Ponderada')
+            with tab3:
+                st.subheader("📊 Análisis por Área")
+                
+                # Análisis por área
+                area_analysis = df_filtered.groupby('Area').agg({
+                    'Puntuacion_Ponderada': ['count', 'mean'],
+                    'Valor_Estrategico': 'mean',
+                    'Nivel_Impacto': 'mean',
+                    'Viabilidad_Tecnica': 'mean',
+                    'Costo_Beneficio': 'mean',
+                    'Innovacion_Disrupcion': 'mean',
+                    'Escalabilidad_Transversalidad': 'mean',
+                    'Tiempo_Implementacion': 'mean'
+                }).round(2)
+                
+                area_analysis.columns = ['Num_Iniciativas', 'Puntuacion_Promedio',
+                                       'Val_Estrategico', 'Impacto', 'Viabilidad', 'Costo_Beneficio',
+                                       'Innovacion', 'Escalabilidad', 'Tiempo_Impl']
+                
+                # Gráficos por área
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    fig_bar = px.bar(
+                        x=area_analysis.index,
+                        y=area_analysis['Num_Iniciativas'],
+                        title="Número de Iniciativas por Área"
+                    )
+                    st.plotly_chart(fig_bar, use_container_width=True)
+                
+                with col2:
+                    fig_bar2 = px.bar(
+                        x=area_analysis.index,
+                        y=area_analysis['Puntuacion_Promedio'],
+                        title="Puntuación Promedio por Área"
+                    )
+                    st.plotly_chart(fig_bar2, use_container_width=True)
+                
+                # Tabla resumen
+                st.subheader("📋 Resumen por Área")
+                st.dataframe(area_analysis, use_container_width=True)
             
-            for i, (_, row) in enumerate(top_3.iterrows(), 1):
-                priority_class = f"priority-{row['Prioridad'].lower()}"
+            # ==========================================
+            # TAB 4: DETALLE DE INICIATIVAS
+            # ==========================================
+            
+            with tab4:
+                st.subheader("🔍 Detalle de Iniciativas")
                 
-                # Calcular fortalezas
-                metrics = {
-                    'Valor_Estrategico': 'Valor Estratégico',
-                    'Nivel_Impacto': 'Nivel de Impacto',
-                    'Viabilidad_Tecnica': 'Viabilidad Técnica',
-                    'Costo_Beneficio': 'Costo-Beneficio',
-                    'Innovacion_Disrupcion': 'Innovación',
-                    'Escalabilidad_Transversalidad': 'Escalabilidad',
-                    'Tiempo_Implementacion': 'Tiempo de Implementación'
-                }
+                iniciativas_list = df_filtered['Nombre_Iniciativa'].tolist()
                 
-                fortalezas = []
-                for metric_key, metric_name in metrics.items():
-                    if row[metric_key] >= 4:
-                        fortalezas.append(f"{metric_name} ({row[metric_key]}/5)")
+                if iniciativas_list:
+                    selected_initiative = st.selectbox(
+                        "Selecciona una iniciativa para ver detalles:",
+                        iniciativas_list
+                    )
+                    
+                    # Mostrar detalles
+                    init_data = df_filtered[df_filtered['Nombre_Iniciativa'] == selected_initiative].iloc[0]
+                    
+                    col1, col2 = st.columns([2, 1])
+                    
+                    with col1:
+                        st.markdown(f"""
+                        ### {init_data['Nombre_Iniciativa']}
+                        
+                        **👤 Propuesta por:** {init_data['Nombre_Colaborador']}  
+                        **🏢 Área:** {init_data['Area']}  
+                        **⭐ Puntuación Ponderada:** {init_data['Puntuacion_Ponderada']:.2f}/5.0  
+                        **🎯 Prioridad:** {init_data['Prioridad']}
+                        
+                        **📝 Problema que resuelve:**
+                        {init_data.get('Problema', 'No especificado')}
+                        
+                        **💡 Propuesta:**
+                        {init_data.get('Propuesta', 'No especificada')}
+                        
+                        **✅ Beneficios esperados:**
+                        {init_data.get('Beneficios', 'No especificados')}
+                        """)
+                    
+                    with col2:
+                        # Gráfico radar individual
+                        metrics = ['Valor_Estrategico', 'Nivel_Impacto', 'Viabilidad_Tecnica', 
+                                  'Costo_Beneficio', 'Innovacion_Disrupcion', 
+                                  'Escalabilidad_Transversalidad', 'Tiempo_Implementacion']
+                        
+                        values = [init_data[metric] for metric in metrics]
+                        
+                        fig_individual = go.Figure()
+                        fig_individual.add_trace(go.Scatterpolar(
+                            r=values,
+                            theta=['Val. Estratégico', 'Impacto', 'Viabilidad',
+                                   'Costo-Beneficio', 'Innovación', 'Escalabilidad', 'Tiempo'],
+                            fill='toself',
+                            name=selected_initiative,
+                            line=dict(color='#2d5aa0')
+                        ))
+                        
+                        fig_individual.update_layout(
+                            polar=dict(radialaxis=dict(visible=True, range=[0, 5])),
+                            showlegend=False,
+                            title="Perfil de la Iniciativa"
+                        )
+                        
+                        st.plotly_chart(fig_individual, use_container_width=True)
+                    
+                    # Métricas detalladas
+                    st.subheader("📊 Métricas Detalladas")
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Valor Estratégico", f"{init_data['Valor_Estrategico']}/5")
+                        st.metric("Nivel de Impacto", f"{init_data['Nivel_Impacto']}/5")
+                    
+                    with col2:
+                        st.metric("Viabilidad Técnica", f"{init_data['Viabilidad_Tecnica']}/5")
+                        st.metric("Costo-Beneficio", f"{init_data['Costo_Beneficio']}/5")
+                    
+                    with col3:
+                        st.metric("Innovación", f"{init_data['Innovacion_Disrupcion']}/5")
+                        st.metric("Escalabilidad", f"{init_data['Escalabilidad_Transversalidad']}/5")
+                    
+                    with col4:
+                        st.metric("Tiempo Implementación", f"{init_data['Tiempo_Implementacion']}/5")
+                        st.metric("Puntuación Total", f"{init_data['Puntuacion_Total']}/35")
+            
+            # ==========================================
+            # TAB 5: REPORTE EJECUTIVO
+            # ==========================================
+            
+            with tab5:
+                st.subheader("📋 Reporte Ejecutivo")
                 
-                fortalezas_text = ", ".join(fortalezas) if fortalezas else "Perfil equilibrado"
+                # Botones superiores
+                col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
                 
-                st.markdown(f"""
+                with col_btn1:
+                    # Botón PDF
+                    if st.button("📄 Generar Reporte PDF", type="primary"):
+                        try:
+                            with st.spinner("Generando reporte PDF..."):
+                                pdf_buffer = generate_pdf_report(df_filtered)
+                                
+                            st.download_button(
+                                label="⬇️ Descargar Reporte PDF",
+                                data=pdf_buffer,
+                                file_name=f"reporte_ejecutivo_innovacion_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                                mime="application/pdf"
+                            )
+                            st.success("✅ Reporte PDF generado exitosamente!")
+                            
+                        except Exception as e:
+                            st.error(f"Error al generar PDF: {str(e)}")
+                
+                with col_btn2:
+                    # Botón CSV
+                    if st.button("📊 Descargar Datos CSV"):
+                        csv = df_filtered.to_csv(index=False)
+                        st.download_button(
+                            label="⬇️ Descargar CSV",
+                            data=csv,
+                            file_name=f"iniciativas_innovacion_{datetime.now().strftime('%Y%m%d')}.csv",
+                            mime="text/csv"
+                        )
+                
+                st.markdown("---")
+                
+                # Resumen ejecutivo
+                total_initiatives = len(df_filtered)
+                high_priority = len(df_filtered[df_filtered['Prioridad'] == 'Alta'])
+                medium_priority = len(df_filtered[df_filtered['Prioridad'] == 'Media'])
+                low_priority = len(df_filtered[df_filtered['Prioridad'] == 'Baja'])
+                avg_score = df_filtered['Puntuacion_Ponderada'].mean()
+                top_area = df_filtered['Area'].value_counts().index[0] if len(df_filtered) > 0 else "N/A"
+                
+                fecha_reporte = datetime.now().strftime('%B %Y')
+                st.markdown("### 📊 Resumen Ejecutivo")
+                st.markdown(f"**Período de análisis:** {fecha_reporte}")
+                
+                # Métricas clave
+                st.markdown("#### Métricas Clave:")
+                met_col1, met_col2, met_col3, met_col4 = st.columns(4)
+                
+                with met_col1:
+                    st.metric("Total Iniciativas", total_initiatives)
+                
+                with met_col2:
+                    st.metric("Alta Prioridad", f"{high_priority}", 
+                             delta=f"{high_priority/total_initiatives*100:.1f}%" if total_initiatives > 0 else "0%")
+                
+                with met_col3:
+                    st.metric("Puntuación Promedio", f"{avg_score:.2f}/5.0")
+                
+                with met_col4:
+                    st.metric("Área Más Activa", top_area)
+                
+                # Distribución de prioridades
+                st.markdown("#### 🎯 Distribución de Prioridades")
+                priority_col1, priority_col2 = st.columns([1, 2])
+                
+                with priority_col1:
+                    priority_data = pd.DataFrame({
+                        'Prioridad': ['Alta', 'Media', 'Baja'],
+                        'Cantidad': [high_priority, medium_priority, low_priority],
+                        'Porcentaje': [
+                            f"{high_priority/total_initiatives*100:.1f}%" if total_initiatives > 0 else "0%",
+                            f"{medium_priority/total_initiatives*100:.1f}%" if total_initiatives > 0 else "0%",
+                            f"{low_priority/total_initiatives*100:.1f}%" if total_initiatives > 0 else "0%"
+                        ]
+                    })
+                    st.dataframe(priority_data, hide_index=True)
+                
+                with priority_col2:
+                    if total_initiatives > 0:
+                        fig_priority_pie = px.pie(
+                            values=[high_priority, medium_priority, low_priority],
+                            names=['Alta', 'Media', 'Baja'],
+                            color_discrete_map={'Alta': '#28a745', 'Media': '#ffc107', 'Baja': '#dc3545'},
+                            height=300
+                        )
+                        fig_priority_pie.update_traces(textposition='inside', textinfo='percent+label')
+                        fig_priority_pie.update_layout(showlegend=False, margin=dict(t=0, b=0, l=0, r=0))
+                        st.plotly_chart(fig_priority_pie, use_container_width=True)
+                
+                # Top 3 iniciativas
+                st.markdown("#### 🏆 Top 3 Iniciativas Recomendadas")
+                top_3 = df_filtered.nlargest(3, 'Puntuacion_Ponderada')
+                
+                for i, (_, row) in enumerate(top_3.iterrows(), 1):
+                    priority_class = f"priority-{row['Prioridad'].lower()}"
+                    
+                    # Calcular fortalezas
+                    metrics_dict = {
+                        'Valor_Estrategico': 'Valor Estratégico',
+                        'Nivel_Impacto': 'Nivel de Impacto',
+                        'Viabilidad_Tecnica': 'Viabilidad Técnica',
+                        'Costo_Beneficio': 'Costo-Beneficio',
+                        'Innovacion_Disrupcion': 'Innovación',
+                        'Escalabilidad_Transversalidad': 'Escalabilidad',
+                        'Tiempo_Implementacion': 'Tiempo de Implementación'
+                    }
+                    
+                    fortalezas = [f"{metric_name} ({row[metric_key]}/5)" 
+                                 for metric_key, metric_name in metrics_dict.items() 
+                                 if row[metric_key] >= 4]
+                    
+                    fortalezas_text = ", ".join(fortalezas) if fortalezas else "Perfil equilibrado"
+                    
+                    st.markdown(f"""
 <div class="metric-card {priority_class}">
     <h4>🏆 #{i} {row['Nombre_Iniciativa']}</h4>
     <p><strong>👤 Propuesto por:</strong> {row['Nombre_Colaborador']} ({row['Area']})</p>
     <p><strong>⭐ Puntuación:</strong> {row['Puntuacion_Ponderada']:.2f}/5.0 | 
        <strong>🎯 Prioridad:</strong> {row['Prioridad']}</p>
     <p><strong>💪 Fortalezas:</strong> {fortalezas_text}</p>
-    <p><strong>📝 Problema:</strong> {row.get('Problema', 'No especificado')[:120]}{'...' if len(str(row.get('Problema', ''))) > 120 else ''}</p>
+    <p><strong>📝 Problema:</strong> {str(row.get('Problema', 'No especificado'))[:120]}{'...' if len(str(row.get('Problema', ''))) > 120 else ''}</p>
 </div>
-                """, unsafe_allow_html=True)
-            
-            # Recomendaciones estratégicas
-            st.markdown("#### 💡 Recomendaciones Estratégicas")
-            
-            recommendations = []
-            
-            if high_priority > 0:
-                recommendations.append(f"**🚀 Implementación inmediata:** Priorizar las {high_priority} iniciativas de alta puntuación para obtener resultados rápidos y visibles.")
-            
-            if medium_priority > 0:
-                recommendations.append(f"**🔍 Análisis detallado:** Las {medium_priority} iniciativas de prioridad media requieren evaluación adicional de recursos y timeline.")
-            
-            # Análisis de viabilidad
-            low_viability = len(df_filtered[df_filtered['Viabilidad_Tecnica'] < 3])
-            if low_viability > 0:
-                recommendations.append(f"**📚 Desarrollo de capacidades:** {low_viability} iniciativas presentan desafíos de viabilidad técnica que requieren fortalecimiento de capacidades.")
-            
-            # Oportunidades de escalabilidad
-            high_scalability = len(df_filtered[df_filtered['Escalabilidad_Transversalidad'] >= 4])
-            if high_scalability > 0:
-                recommendations.append(f"**🔄 Potencial de escalabilidad:** {high_scalability} iniciativas muestran alto potencial de replicación en otras áreas.")
-            
-            recommendations.append(f"**👏 Reconocimiento:** El área de '{top_area}' muestra el mayor nivel de participación en el proceso de innovación.")
-            
-            for rec in recommendations:
-                st.markdown(f"• {rec}")
-            
-            # Próximos pasos
-            st.markdown("#### 📋 Próximos Pasos Sugeridos")
-            
-            next_steps = [
-                "Convocar comité de evaluación para revisar iniciativas de alta prioridad",
-                "Asignar recursos y equipos para las 3 mejores iniciativas",
-                "Establecer cronograma de implementación con hitos específicos",
-                "Definir métricas de éxito y sistema de seguimiento",
-                "Comunicar resultados a los colaboradores participantes",
-                "Planificar siguiente ciclo de recolección de iniciativas"
-            ]
-            
-            for i, step in enumerate(next_steps, 1):
-                st.markdown(f"**{i}.** {step}")
-            
-            # Información adicional sobre el reporte PDF
-            st.markdown("---")
-            st.info("""
-            💡 **Sobre el Reporte PDF:**
-            - Incluye todas las métricas y análisis mostrados arriba
-            - Formato profesional optimizado para presentaciones ejecutivas
-            - Contiene gráficos y tablas de fácil lectura
-            - Ideal para compartir con la dirección y stakeholders
-            """)
+                    """, unsafe_allow_html=True)
+                
+                # Recomendaciones estratégicas
+                st.markdown("#### 💡 Recomendaciones Estratégicas")
+                
+                recommendations = []
+                
+                if high_priority > 0:
+                    recommendations.append(f"**🚀 Implementación inmediata:** Priorizar las {high_priority} iniciativas de alta puntuación")
+                
+                if medium_priority > 0:
+                    recommendations.append(f"**🔍 Análisis detallado:** Las {medium_priority} iniciativas de prioridad media requieren evaluación adicional")
+                
+                low_viability = len(df_filtered[df_filtered['Viabilidad_Tecnica'] < 3])
+                if low_viability > 0:
+                    recommendations.append(f"**📚 Desarrollo de capacidades:** {low_viability} iniciativas presentan desafíos de viabilidad técnica")
+                
+                high_scalability = len(df_filtered[df_filtered['Escalabilidad_Transversalidad'] >= 4])
+                if high_scalability > 0:
+                    recommendations.append(f"**🔄 Potencial de escalabilidad:** {high_scalability} iniciativas muestran alto potencial de replicación")
+                
+                recommendations.append(f"**👏 Reconocimiento:** El área de '{top_area}' muestra el mayor nivel de participación")
+                
+                for rec in recommendations:
+                    st.markdown(f"• {rec}")
+                
+                # Próximos pasos
+                st.markdown("#### 📋 Próximos Pasos Sugeridos")
+                
+                next_steps = [
+                    "Convocar comité de evaluación para revisar iniciativas de alta prioridad",
+                    "Asignar recursos y equipos para las 3 mejores iniciativas",
+                    "Establecer cronograma de implementación con hitos específicos",
+                    "Definir métricas de éxito y sistema de seguimiento",
+                    "Comunicar resultados a los colaboradores participantes",
+                    "Planificar siguiente ciclo de recolección de iniciativas"
+                ]
+                
+                for i, step in enumerate(next_steps, 1):
+                    st.markdown(f"**{i}.** {step}")
+                
+                # Información sobre PDF
+                st.markdown("---")
+                st.info("""
+                💡 **Sobre el Reporte PDF:**
+                - Incluye todas las métricas y análisis mostrados arriba
+                - Formato profesional optimizado para presentaciones ejecutivas
+                - Contiene gráficos y tablas de fácil lectura
+                - Ideal para compartir con la dirección y stakeholders
+                """)
+        
+        else:
+            st.warning("No se encontraron datos válidos en el archivo.")
+            st.info("Verifica que el archivo contenga las columnas necesarias y datos válidos.")
     
     else:
-        st.warning("No se encontraron datos válidos en el archivo.")
-        st.info("Verifica que el archivo contenga las columnas necesarias y datos válidos.")
+        # ==========================================
+        # PÁGINA DE INFORMACIÓN
+        # ==========================================
+        
+        st.info("👆 Selecciona una fuente de datos en la barra lateral para comenzar el análisis.")
+        
+        st.markdown("""
+        ## 💡 Acerca de este sistema
+        
+        Esta aplicación analiza automáticamente las iniciativas de innovación propuestas por los colaboradores, 
+        utilizando las puntuaciones generadas por IA en Zapier.
+        
+        ### Características principales:
+        - ✅ Carga automática desde Google Sheets
+        - 📊 Visualizaciones interactivas 
+        - 🎯 Sistema de priorización ponderado
+        - 🏆 Rankings y comparaciones
+        - 📋 Reportes ejecutivos en PDF
+        - 🔍 Análisis detallado por iniciativa
+        
+        ### Criterios de evaluación (escala 0-5):
+        - **Valor estratégico (20%):** Contribución a objetivos estratégicos
+        - **Nivel de impacto (20%):** Valor o transformación esperada
+        - **Viabilidad técnica (15%):** Posibilidad de implementación
+        - **Costo-beneficio (15%):** Justificación del esfuerzo/costo
+        - **Innovación/disrupción (10%):** Novedad de la propuesta
+        - **Escalabilidad/transversalidad (10%):** Potencial de replicación
+        - **Tiempo de implementación (10%):** Velocidad de puesta en marcha
+        
+        ### Cómo usar:
+        1. **Selecciona fuente de datos** en la barra lateral
+        2. **Explora las 5 pestañas** de análisis disponibles
+        3. **Aplica filtros** por área o prioridad según necesites
+        4. **Genera reportes PDF** para presentaciones ejecutivas
+        5. **Exporta datos** en CSV para análisis adicionales
+        """)
 
-else:
-    st.info("👆 Selecciona una fuente de datos en la barra lateral para comenzar el análisis.")
-    
-    # Información sobre el sistema
-    st.markdown("""
-    ## 💡 Acerca de este sistema
-    
-    Esta aplicación analiza automáticamente las iniciativas de innovación propuestas por los colaboradores, 
-    utilizando las puntuaciones generadas por IA en Zapier.
-    
-    ### Características principales:
-    - ✅ Carga automática desde Google Sheets
-    - 📊 Visualizaciones interactivas 
-    - 🎯 Sistema de priorización ponderado
-    - 🏆 Rankings y comparaciones
-    - 📋 Reportes ejecutivos
-    - 🔍 Análisis detallado por iniciativa
-    
-    ### Criterios de evaluación (escala 0-5):
-    - **Valor estratégico:** Contribución a objetivos estratégicos
-    - **Nivel de impacto:** Valor o transformación esperada
-    - **Viabilidad técnica:** Posibilidad de implementación
-    - **Costo-beneficio:** Justificación del esfuerzo/costo
-    - **Innovación/disrupción:** Novedad de la propuesta
-    - **Escalabilidad/transversalidad:** Potencial de replicación
-    - **Tiempo de implementación:** Velocidad de puesta en marcha
-    """)
+# ==========================================
+# FOOTER
+# ==========================================
 
-# Footer
-st.markdown("---")
-st.markdown("🚀 **Sistema de Análisis de Iniciativas de Innovación** | Desarrollado para el equipo de Innovación")
+    st.markdown("---")
+    st.markdown("🚀 **Sistema de Análisis de Iniciativas de Innovación** | Desarrollado para el equipo de Innovación")
+
+# ==========================================
+# EJECUTAR APLICACIÓN
+# ==========================================
+
+if __name__ == "__main__":
+    main()
