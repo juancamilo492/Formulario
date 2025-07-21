@@ -891,8 +891,7 @@ if df is not None:
                     fig_priority_pie.update_layout(showlegend=False, margin=dict(t=0, b=0, l=0, r=0))
                     st.plotly_chart(fig_priority_pie, use_container_width=True)
             
-            #### Top 3 Iniciativas Recomendadas:
-            """)
+            st.markdown("#### 🏆 Top 3 Iniciativas Recomendadas")
             
             # Top 3 iniciativas con diseño mejorado
             top_3 = df_filtered.nlargest(3, 'Puntuacion_Ponderada')
@@ -919,14 +918,14 @@ if df is not None:
                 fortalezas_text = ", ".join(fortalezas) if fortalezas else "Perfil equilibrado"
                 
                 st.markdown(f"""
-                <div class="metric-card {priority_class}">
-                    <h4>🏆 #{i} {row['Nombre_Iniciativa']}</h4>
-                    <p><strong>👤 Propuesto por:</strong> {row['Nombre_Colaborador']} ({row['Area']})</p>
-                    <p><strong>⭐ Puntuación:</strong> {row['Puntuacion_Ponderada']:.2f}/5.0 | 
-                       <strong>🎯 Prioridad:</strong> {row['Prioridad']}</p>
-                    <p><strong>💪 Fortalezas:</strong> {fortalezas_text}</p>
-                    <p><strong>📝 Problema:</strong> {row.get('Problema', 'No especificado')[:120]}{'...' if len(str(row.get('Problema', ''))) > 120 else ''}</p>
-                </div>
+<div class="metric-card {priority_class}">
+    <h4>🏆 #{i} {row['Nombre_Iniciativa']}</h4>
+    <p><strong>👤 Propuesto por:</strong> {row['Nombre_Colaborador']} ({row['Area']})</p>
+    <p><strong>⭐ Puntuación:</strong> {row['Puntuacion_Ponderada']:.2f}/5.0 | 
+       <strong>🎯 Prioridad:</strong> {row['Prioridad']}</p>
+    <p><strong>💪 Fortalezas:</strong> {fortalezas_text}</p>
+    <p><strong>📝 Problema:</strong> {row.get('Problema', 'No especificado')[:120]}{'...' if len(str(row.get('Problema', ''))) > 120 else ''}</p>
+</div>
                 """, unsafe_allow_html=True)
             
             # Recomendaciones estratégicas
