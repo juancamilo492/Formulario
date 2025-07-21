@@ -108,15 +108,6 @@ def load_data_from_url():
                     except:
                         # Como último recurso, usar el texto tal como viene
                         df = pd.read_csv(StringIO(response.text))
-                
-                if len(df) > 0:
-                    st.success(f"✅ Datos cargados exitosamente desde Google Sheets ({len(df)} registros)")
-                    
-                    # Debug: mostrar sample de columnas para verificar encoding
-                    st.write("🔍 **Sample de columnas detectadas:**")
-                    sample_cols = list(df.columns)[:5]  # Primeras 5 columnas
-                    for i, col in enumerate(sample_cols):
-                        st.write(f"{i+1}. \"{col}\"")
                     
                     return df
                     
