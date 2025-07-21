@@ -80,6 +80,19 @@ st.markdown("""
         border-left-color: #dc3545 !important;
         background: #f8d7da !important;
     }
+    .login-container {
+        max-width: 400px;
+        margin: 0 auto;
+        padding: 2rem;
+        background: #f8f9fa;
+        border-radius: 10px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .login-header {
+        text-align: center;
+        color: #1f4e79;
+        margin-bottom: 1.5rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -460,11 +473,58 @@ def generate_pdf_report(df_filtered):
     return buffer
 
 # ==========================================
+# FUNCIÓN DE LOGIN
+# ==========================================
+
+def check_credentials(username, password):
+    """Verifica las credenciales del usuario contra st.secrets"""
+    try:
+        users = st.secrets["users"]
+        for user_key in users:
+            user_data = users[user_key]
+            if (user_data["username"] == username and 
+                user_data["password"] == password):
+                return True
+        return False
+    except Exception as e:
+        st.error(f"Error al verificar credenciales: {str(e)}")
+        return False
+
+def login_page():
+    """Muestra la página de login"""
+    st.markdown("""
+    <div class="login-container">
+        <h2 class="login-header">Iniciar Sesión</h2>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    with st.form(key="login_form"):
+        username = st.text_input("Usuario", placeholder="Ingresa tu usuario")
+        password = st.text_input("Contraseña", type="password", placeholder="Ingresa tu contraseña")
+        submit_button = st.form_submit_button("Iniciar Sesión")
+        
+        if submit_button:
+            if check_credentials(username, password):
+                st.session_state["authenticated"] = True
+                st.success("✅ Inicio de sesión exitoso")
+                st.rerun()  # Refresca la página para mostrar el contenido principal
+            else:
+                st.error("❌ Usuario o contraseña incorrectos")
+
+# ==========================================
 # FUNCIÓN PRINCIPAL DE LA APLICACIÓN
 # ==========================================
 
 def main():
     """Función principal de la aplicación"""
+    
+    # Verificar si el usuario está autenticado
+    if "authenticated" not in st.session_state:
+        st.session_state["authenticated"] = False
+    
+    if not st.session_state["authenticated"]:
+        login_page()
+        return
     
     # Header principal
     st.markdown('''
@@ -473,6 +533,11 @@ def main():
         <p>Sistema de Análisis y Priorización de Propuestas</p>
     </div>
     ''', unsafe_allow_html=True)
+    
+    # Botón de cerrar sesión
+    if st.sidebar.button("Cerrar Sesión"):
+        st.session_state["authenticated"] = False
+        st.rerun()
     
     # ==========================================
     # SIDEBAR - CONFIGURACIÓN
