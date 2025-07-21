@@ -97,13 +97,31 @@ def load_data_from_url():
                 response = requests.get(url, headers=headers)
                 response.raise_for_status()
                 
-                df = pd.read_csv(StringIO(response.text))
+                # Intentar diferentes encodings para manejar caracteres especiales
+                try:
+                    # Primero intentar UTF-8
+                    df = pd.read_csv(StringIO(response.text), encoding='utf-8')
+                except UnicodeDecodeError:
+                    try:
+                        # Si falla, intentar latin-1
+                        df = pd.read_csv(StringIO(response.content.decode('latin-1')))
+                    except:
+                        # Como último recurso, usar el texto tal como viene
+                        df = pd.read_csv(StringIO(response.text))
                 
                 if len(df) > 0:
                     st.success(f"✅ Datos cargados exitosamente desde Google Sheets ({len(df)} registros)")
+                    
+                    # Debug: mostrar sample de columnas para verificar encoding
+                    st.write("🔍 **Sample de columnas detectadas:**")
+                    sample_cols = list(df.columns)[:5]  # Primeras 5 columnas
+                    for i, col in enumerate(sample_cols):
+                        st.write(f"{i+1}. \"{col}\"")
+                    
                     return df
                     
             except Exception as e:
+                st.write(f"Intento con URL falló: {str(e)}")
                 continue
                 
         # Si ninguna URL funciona
@@ -151,74 +169,66 @@ def clean_and_process_data(df):
     # Crear una copia para trabajar
     df_clean = df.copy()
     
-    # Debug: mostrar columnas originales
-    st.write("🔍 **Debug - Columnas originales:**")
-    st.write([f'"{col}"' for col in df_clean.columns])
-    
     # Limpiar nombres de columnas más agresivamente
     df_clean.columns = [col.strip().rstrip() for col in df_clean.columns]
     
-    st.write("🔍 **Debug - Columnas después de limpiar:**")
-    st.write([f'"{col}"' for col in df_clean.columns])
-    
-    # Mapeo más flexible que maneja variaciones en espacios
+    # Mapeo que maneja tanto caracteres normales como mal codificados
     column_mapping = {}
     
     # Mapear columnas principales
     for col in df_clean.columns:
         col_clean = col.strip()
         
-        # Mapeo basado en contenido clave de las columnas
+        # Mapeo basado en contenido clave de las columnas (maneja encoding issues)
         if 'Marca temporal' in col_clean:
             column_mapping[col] = 'Fecha'
         elif 'Nombre completo' in col_clean:
             column_mapping[col] = 'Nombre_Colaborador'
-        elif 'Correo electrónico' in col_clean:
+        elif 'Correo electr' in col_clean:  # Maneja "Correo electrÃ³nico"
             column_mapping[col] = 'Correo'
-        elif 'Rol o relación con Alico' in col_clean:
+        elif 'Rol o relaci' in col_clean:  # Maneja "Rol o relaciÃ³n con Alico"
             column_mapping[col] = 'Rol'
-        elif 'área o proceso al cual perteneces' in col_clean:
+        elif 'rea o proceso' in col_clean:  # Maneja "Selecciona el Ã¡rea o proceso"
             column_mapping[col] = 'Area'
-        elif 'Nombre de la idea o iniciativa' in col_clean:
+        elif 'Nombre de la idea' in col_clean:
             column_mapping[col] = 'Nombre_Iniciativa'
-        elif 'problema, necesidad u oportunidad' in col_clean:
+        elif 'problema, necesidad' in col_clean:
             column_mapping[col] = 'Problema'
-        elif 'Cuál es tu propuesta' in col_clean:
+        elif 'Cu' in col_clean and 'l es tu propuesta' in col_clean:  # Maneja "Â¿CuÃ¡l es tu propuesta?"
             column_mapping[col] = 'Propuesta'
-        elif 'proceso/s crees que se relaciona' in col_clean:
+        elif 'proceso/s crees' in col_clean:
             column_mapping[col] = 'Proceso_Relacionado'
-        elif 'beneficios esperas que genere' in col_clean:
+        elif 'beneficios esperas' in col_clean:
             column_mapping[col] = 'Beneficios'
-        elif 'idea la has visto implementada' in col_clean:
+        elif 'idea la has visto' in col_clean:
             column_mapping[col] = 'Vista_Otro_Lugar'
-        elif 'respuesta anterior fue si' in col_clean:
+        elif 'respuesta anterior' in col_clean:
             column_mapping[col] = 'Donde_Como'
-        elif 'puede implementarse con los recursos' in col_clean:
+        elif 'puede implementarse' in col_clean:
             column_mapping[col] = 'Recursos_Actuales'
-        elif col_clean == 'Valor estratégico':
+        # Campos numéricos con encoding issues
+        elif 'Valor estrat' in col_clean:  # Maneja "Valor estratÃ©gico"
             column_mapping[col] = 'Valor_Estrategico'
-        elif col_clean == 'Nivel de impacto':
+        elif 'Nivel de impacto' in col_clean:
             column_mapping[col] = 'Nivel_Impacto'
-        elif col_clean == 'Viabilidad técnica':
+        elif 'Viabilidad t' in col_clean:  # Maneja "Viabilidad tÃ©cnica"
             column_mapping[col] = 'Viabilidad_Tecnica'
-        elif col_clean == 'Costo-beneficio':
+        elif 'Costo-beneficio' in col_clean:
             column_mapping[col] = 'Costo_Beneficio'
-        elif 'Innovación' in col_clean and 'disrupción' in col_clean:
+        elif 'Innovaci' in col_clean and 'disrupci' in col_clean:  # Maneja "InnovaciÃ³n / disrupciÃ³n"
             column_mapping[col] = 'Innovacion_Disrupcion'
         elif 'Escalabilidad' in col_clean and 'transversalidad' in col_clean:
             column_mapping[col] = 'Escalabilidad_Transversalidad'
-        elif 'Tiempo de implementación' in col_clean:
+        elif 'Tiempo de implementaci' in col_clean:  # Maneja "Tiempo de implementaciÃ³n"
             column_mapping[col] = 'Tiempo_Implementacion'
     
-    st.write("🔍 **Debug - Mapeo de columnas:**")
+    # Debug: mostrar mapeo
+    st.write("🔍 **Mapeo de columnas aplicado:**")
     for old_col, new_col in column_mapping.items():
         st.write(f'"{old_col}" → "{new_col}"')
     
     # Aplicar mapeo de columnas
     df_clean = df_clean.rename(columns=column_mapping)
-    
-    st.write("🔍 **Debug - Columnas finales:**")
-    st.write(list(df_clean.columns))
     
     # Verificar columnas necesarias
     numeric_columns = ['Valor_Estrategico', 'Nivel_Impacto', 'Viabilidad_Tecnica', 
@@ -230,16 +240,16 @@ def clean_and_process_data(df):
     missing_columns = [col for col in required_columns if col not in df_clean.columns]
     
     if missing_columns:
-        st.error(f"❌ Columnas faltantes: {missing_columns}")
+        st.error(f"❌ Columnas aún faltantes después del mapeo: {missing_columns}")
         st.write("**Columnas disponibles después del mapeo:**")
         st.write(list(df_clean.columns))
         
-        # Intentar mapeo manual para columnas faltantes
-        st.write("**🔧 Intentando mapeo manual...**")
-        manual_mapping = {}
-        
-        available_cols = [col for col in df_clean.columns if col not in column_mapping.values()]
-        st.write(f"Columnas disponibles para mapeo manual: {available_cols}")
+        # Mostrar columnas sin mapear para diagnóstico
+        unmapped_cols = [col for col in df.columns if col not in column_mapping.keys()]
+        if unmapped_cols:
+            st.write("**Columnas que no se pudieron mapear:**")
+            for col in unmapped_cols:
+                st.write(f'- "{col}"')
         
         return None
     
@@ -254,7 +264,8 @@ def clean_and_process_data(df):
     
     # Convertir campos numéricos
     for field in numeric_columns:
-        df_clean[field] = pd.to_numeric(df_clean[field], errors='coerce').fillna(0)
+        if field in df_clean.columns:
+            df_clean[field] = pd.to_numeric(df_clean[field], errors='coerce').fillna(0)
     
     # Calcular métricas derivadas
     df_clean['Puntuacion_Total'] = (
