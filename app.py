@@ -516,16 +516,60 @@ def main():
             
             st.sidebar.subheader("🔍 Filtros")
             
-            # Filtro por área
-            areas_disponibles = ['Todas'] + sorted(df_processed['Area'].unique().tolist())
-            area_selected = st.sidebar.selectbox("Área:", areas_disponibles)
+            # Filtro por área con checkboxes múltiples
+            st.sidebar.markdown("**📊 Filtrar por Área:**")
+            areas_disponibles = sorted(df_processed['Area'].unique().tolist())
             
-            # Filtro por prioridad
-            prioridades = ['Todas'] + sorted(df_processed['Prioridad'].unique().tolist())
-            prioridad_selected = st.sidebar.selectbox("Prioridad:", prioridades)
+            # Checkbox para seleccionar todas las áreas
+            select_all_areas_filter = st.sidebar.checkbox("🔄 Seleccionar todas las áreas", value=True, key="filter_all_areas")
             
-            # Filtro por proceso
+            if select_all_areas_filter:
+                areas_selected = areas_disponibles
+                st.sidebar.success(f"✅ Todas las áreas seleccionadas ({len(areas_disponibles)})")
+            else:
+                areas_selected = []
+                # Mostrar checkboxes para cada área
+                for area in areas_disponibles:
+                    if st.sidebar.checkbox(f"📋 {area}", key=f"filter_area_{area}"):
+                        areas_selected.append(area)
+                
+                if areas_selected:
+                    st.sidebar.info(f"📊 Áreas seleccionadas: {len(areas_selected)}")
+                else:
+                    st.sidebar.warning("⚠️ Ninguna área seleccionada")
+            
+            st.sidebar.markdown("---")
+            
+            # Filtro por prioridad con checkboxes múltiples
+            st.sidebar.markdown("**🎯 Filtrar por Prioridad:**")
+            prioridades_disponibles = sorted(df_processed['Prioridad'].unique().tolist())
+            
+            # Checkbox para seleccionar todas las prioridades
+            select_all_priorities = st.sidebar.checkbox("🔄 Seleccionar todas las prioridades", value=True, key="filter_all_priorities")
+            
+            if select_all_priorities:
+                prioridades_selected = prioridades_disponibles
+                st.sidebar.success(f"✅ Todas las prioridades seleccionadas")
+            else:
+                prioridades_selected = []
+                # Mostrar checkboxes para cada prioridad con colores
+                priority_colors = {"Alta": "🟢", "Media": "🟡", "Baja": "🔴"}
+                for prioridad in prioridades_disponibles:
+                    color_icon = priority_colors.get(prioridad, "⚪")
+                    if st.sidebar.checkbox(f"{color_icon} {prioridad}", key=f"filter_priority_{prioridad}"):
+                        prioridades_selected.append(prioridad)
+                
+                if prioridades_selected:
+                    st.sidebar.info(f"🎯 Prioridades seleccionadas: {len(prioridades_selected)}")
+                else:
+                    st.sidebar.warning("⚠️ Ninguna prioridad seleccionada")
+            
+            st.sidebar.markdown("---")
+            
+            # Filtro por proceso con checkboxes múltiples
             if 'Proceso_Relacionado' in df_processed.columns:
+                st.sidebar.markdown("**⚙️ Filtrar por Proceso:**")
+                
                 # Obtener todos los procesos únicos, manejando valores separados por comas
                 all_processes = []
                 for proc in df_processed['Proceso_Relacionado'].dropna():
@@ -534,21 +578,70 @@ def main():
                         processes = [p.strip() for p in proc.split(',')]
                         all_processes.extend(processes)
                 
-                unique_processes = ['Todos'] + sorted(list(set(all_processes)))
-                proceso_selected = st.sidebar.selectbox("Proceso:", unique_processes)
+                unique_processes = sorted(list(set(all_processes)))
+                
+                if unique_processes:
+                    # Checkbox para seleccionar todos los procesos
+                    select_all_processes_filter = st.sidebar.checkbox("🔄 Seleccionar todos los procesos", value=True, key="filter_all_processes")
+                    
+                    if select_all_processes_filter:
+                        procesos_selected = unique_processes
+                        st.sidebar.success(f"✅ Todos los procesos seleccionados ({len(unique_processes)})")
+                    else:
+                        procesos_selected = []
+                        # Mostrar checkboxes para cada proceso
+                        for proceso in unique_processes:
+                            if st.sidebar.checkbox(f"⚙️ {proceso}", key=f"filter_process_{proceso}"):
+                                procesos_selected.append(proceso)
+                        
+                        if procesos_selected:
+                            st.sidebar.info(f"⚙️ Procesos seleccionados: {len(procesos_selected)}")
+                        else:
+                            st.sidebar.warning("⚠️ Ningún proceso seleccionado")
+                else:
+                    procesos_selected = []
+                    st.sidebar.warning("❌ No se encontraron procesos")
             else:
-                proceso_selected = 'Todos'
+                procesos_selected = []
             
             # Aplicar filtros
             df_filtered = df_processed.copy()
-            if area_selected != 'Todas':
-                df_filtered = df_filtered[df_filtered['Area'] == area_selected]
-            if prioridad_selected != 'Todas':
-                df_filtered = df_filtered[df_filtered['Prioridad'] == prioridad_selected]
-            if proceso_selected != 'Todos' and 'Proceso_Relacionado' in df_processed.columns:
-                # Filtrar por proceso, considerando que puede haber múltiples procesos separados por comas
-                mask = df_filtered['Proceso_Relacionado'].str.contains(proceso_selected, case=False, na=False)
+            
+            # Filtrar por áreas seleccionadas
+            if areas_selected:
+                df_filtered = df_filtered[df_filtered['Area'].isin(areas_selected)]
+            else:
+                df_filtered = df_filtered.iloc[0:0]  # DataFrame vacío si no hay áreas seleccionadas
+            
+            # Filtrar por prioridades seleccionadas
+            if prioridades_selected:
+                df_filtered = df_filtered[df_filtered['Prioridad'].isin(prioridades_selected)]
+            else:
+                df_filtered = df_filtered.iloc[0:0]  # DataFrame vacío si no hay prioridades seleccionadas
+            
+            # Filtrar por procesos seleccionados
+            if procesos_selected and 'Proceso_Relacionado' in df_processed.columns:
+                # Crear máscara para procesos (considerando múltiples procesos por fila)
+                mask = pd.Series([False] * len(df_filtered))
+                for proceso in procesos_selected:
+                    mask |= df_filtered['Proceso_Relacionado'].str.contains(proceso, case=False, na=False)
                 df_filtered = df_filtered[mask]
+            
+            # Mostrar resumen de filtros aplicados
+            if len(df_filtered) != len(df_processed):
+                st.sidebar.markdown("---")
+                st.sidebar.markdown("**📋 Resumen de Filtros:**")
+                st.sidebar.metric("Iniciativas mostradas", len(df_filtered))
+                st.sidebar.metric("Total disponibles", len(df_processed))
+                filtrado_pct = (len(df_filtered) / len(df_processed)) * 100
+                st.sidebar.metric("% Mostrado", f"{filtrado_pct:.1f}%")
+                
+                if len(df_filtered) == 0:
+                    st.sidebar.error("❌ No hay datos que coincidan con los filtros seleccionados")
+            
+            # Botón para limpiar todos los filtros
+            if st.sidebar.button("🔄 Limpiar todos los filtros"):
+                st.rerun()
             
             # ==========================================
             # MÉTRICAS PRINCIPALES
@@ -594,9 +687,9 @@ def main():
             tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
                 "📈 Análisis General", 
                 "🏆 Ranking de Iniciativas", 
-                "📊 Análisis por Área",
+                "📊 Análisis por Área", 
+                "⚙️ Análisis por Proceso",
                 "🔍 Detalle de Iniciativas",
-                "⚙️ Análisis por Proceso", 
                 "📋 Reporte Ejecutivo"
             ])
             
@@ -875,14 +968,42 @@ def main():
                             for i, (_, row) in enumerate(process_initiatives.iterrows(), 1):
                                 priority_class = f"priority-{row['Prioridad'].lower()}"
                                 
-                                nombre_iniciativa = fix_encoding(row['Nombre_Iniciativa'])
-                                nombre_colaborador = fix_encoding(row['Nombre_Colaborador'])
-                                area = fix_encoding(row['Area'])
-                                
-                                st.markdown(f"""
-                                <div class="metric-card {priority_class}">
-                                    <h4>#{i} {nombre_iniciativa}</h4>
-                                    <p><strong>👤 Propuesto por:</strong> {nombre_colaborador} ({area})</p>
+                        # Tabla resumen por proceso
+                        st.subheader("📋 Resumen por Proceso")
+                        st.dataframe(process_analysis, use_container_width=True)
+                        
+                        # Insights por proceso
+                        st.subheader("💡 Insights de Procesos Seleccionados")
+                        
+                        # Proceso con más iniciativas
+                        most_active_process = process_analysis.index[0]
+                        most_initiatives_count = process_analysis.iloc[0]['Num_Iniciativas']
+                        
+                        # Proceso con mejor puntuación promedio
+                        best_scored_process = process_analysis.loc[process_analysis['Puntuacion_Promedio'].idxmax()]
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.info(f"""
+                            **🔥 Proceso más activo:**  
+                            **{most_active_process}** con {int(most_initiatives_count)} iniciativas
+                            """)
+                        
+                        with col2:
+                            st.success(f"""
+                            **⭐ Proceso mejor puntuado:**  
+                            **{best_scored_process.name}** con {best_scored_process['Puntuacion_Promedio']:.2f}/5.0 promedio
+                            """)
+                    
+                    else:
+                        st.warning("❌ No hay procesos disponibles para analizar.")
+                
+                else:
+                    st.warning("❌ No se encontraron datos de procesos para analizar.")
+                
+            else:
+                st.warning("La columna de procesos no está disponible en los datos actuales.")uesto por:</strong> {nombre_colaborador} ({area})</p>
                                     <p><strong>⭐ Puntuación:</strong> {row['Puntuacion_Ponderada']:.2f}/5.0 | 
                                        <strong>🎯 Prioridad:</strong> {row['Prioridad']}</p>
                                 </div>
