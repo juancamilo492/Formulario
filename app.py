@@ -113,10 +113,10 @@ def load_data_from_url():
                     st.success(f"✅ Datos cargados exitosamente desde Google Sheets ({len(df)} registros)")
                     
                     # Debug: mostrar sample de columnas para verificar encoding
-                    st.write("🔍 **Sample de columnas detectadas:**")
+                
                     sample_cols = list(df.columns)[:5]  # Primeras 5 columnas
                     for i, col in enumerate(sample_cols):
-                        st.write(f"{i+1}. \"{col}\"")
+                        
                     
                     return df
                     
@@ -222,10 +222,6 @@ def clean_and_process_data(df):
         elif 'Tiempo de implementaci' in col_clean:  # Maneja "Tiempo de implementaciÃ³n"
             column_mapping[col] = 'Tiempo_Implementacion'
     
-    # Debug: mostrar mapeo
-    st.write("🔍 **Mapeo de columnas aplicado:**")
-    for old_col, new_col in column_mapping.items():
-        st.write(f'"{old_col}" → "{new_col}"')
     
     # Aplicar mapeo de columnas
     df_clean = df_clean.rename(columns=column_mapping)
