@@ -212,6 +212,49 @@ def load_data_from_file(uploaded_file):
         return None
 
 # ==========================================
+# FUNCIÓN PARA PROCESAR FECHAS
+# ==========================================
+
+def process_dates(df):
+    """Procesa las fechas del DataFrame"""
+    if df is None:
+        return df
+    
+    # Buscar columna de fecha/marca temporal
+    date_columns = ['Fecha', 'Marca temporal', 'Timestamp', 'Date', 'fecha', 'marca_temporal']
+    date_col = None
+    
+    for col in df.columns:
+        col_clean = str(col).strip().lower()
+        if any(date_term in col_clean for date_term in ['marca temporal', 'timestamp', 'fecha', 'date']):
+            date_col = col
+            break
+    
+    if date_col is not None:
+        try:
+            # Intentar convertir a datetime
+            df['Fecha_Procesada'] = pd.to_datetime(df[date_col], errors='coerce')
+            
+            # Si hay fechas válidas, crear columnas adicionales
+            if df['Fecha_Procesada'].notna().any():
+                df['Fecha_Solo'] = df['Fecha_Procesada'].dt.date
+                df['Semana'] = df['Fecha_Procesada'].dt.to_period('W').astype(str)
+                df['Mes'] = df['Fecha_Procesada'].dt.to_period('M').astype(str)
+                df['Dia_Semana'] = df['Fecha_Procesada'].dt.day_name()
+                df['Hora'] = df['Fecha_Procesada'].dt.hour
+                
+                return df
+            else:
+                st.warning("No se pudieron procesar las fechas correctamente")
+                return df
+        except Exception as e:
+            st.warning(f"Error al procesar fechas: {str(e)}")
+            return df
+    else:
+        st.warning("No se encontró columna de fecha en los datos")
+        return df
+
+# ==========================================
 # FUNCIÓN DE PROCESAMIENTO DE DATOS
 # ==========================================
 
@@ -474,7 +517,7 @@ def generate_pdf_report(df_filtered):
     return buffer
 
 # ==========================================
-# FUNCIÓN DE LOGIN
+# FUNCIONES DE LOGIN MEJORADAS
 # ==========================================
 
 def check_credentials(username, password):
@@ -492,6 +535,20 @@ def check_credentials(username, password):
         st.error(f"Error al verificar credenciales: {str(e)}")
         return False
 
+def check_session():
+    """Verifica si la sesión está activa"""
+    if "authenticated" not in st.session_state:
+        st.session_state["authenticated"] = False
+    
+    if "session_time" not in st.session_state:
+        st.session_state["session_time"] = datetime.now()
+    
+    # Opcional: Expirar sesión después de X horas (descomenta si quieres tiempo límite)
+    # session_duration = datetime.now() - st.session_state["session_time"]
+    # if session_duration.total_seconds() > 28800:  # 8 horas
+    #     st.session_state["authenticated"] = False
+    #     st.warning("Tu sesión ha expirado. Por favor, inicia sesión nuevamente.")
+
 def login_page():
     """Muestra la página de login"""
     st.markdown("""
@@ -503,15 +560,212 @@ def login_page():
     with st.form(key="login_form"):
         username = st.text_input("Usuario", placeholder="Ingresa tu usuario")
         password = st.text_input("Contraseña", type="password", placeholder="Ingresa tu contraseña")
+        remember_session = st.checkbox("Mantener sesión iniciada", value=True)
         submit_button = st.form_submit_button("Iniciar Sesión")
         
         if submit_button:
             if check_credentials(username, password):
                 st.session_state["authenticated"] = True
+                st.session_state["session_time"] = datetime.now()
+                st.session_state["username"] = username
+                st.session_state["remember_session"] = remember_session
                 st.success("✅ Inicio de sesión exitoso")
                 st.rerun()  # Refresca la página para mostrar el contenido principal
             else:
                 st.error("❌ Usuario o contraseña incorrectos")
+
+# ==========================================
+# NUEVAS FUNCIONES PARA GRÁFICOS DE FECHAS
+# ==========================================
+
+def create_timeline_charts(df):
+    """Crea gráficos de línea de tiempo de iniciativas"""
+    if 'Fecha_Procesada' not in df.columns or df['Fecha_Procesada'].isna().all():
+        st.warning("No hay datos de fecha disponibles para mostrar la línea de tiempo")
+        return
+    
+    # Filtrar solo registros con fecha válida
+    df_with_dates = df[df['Fecha_Procesada'].notna()].copy()
+    
+    if len(df_with_dates) == 0:
+        st.warning("No hay registros con fechas válidas")
+        return
+    
+    # Crear diferentes visualizaciones temporales
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Gráfico por día
+        daily_counts = df_with_dates.groupby('Fecha_Solo').size().reset_index()
+        daily_counts.columns = ['Fecha', 'Cantidad']
+        daily_counts['Fecha'] = pd.to_datetime(daily_counts['Fecha'])
+        
+        fig_daily = px.line(
+            daily_counts,
+            x='Fecha',
+            y='Cantidad',
+            title="📅 Iniciativas Recibidas por Día",
+            markers=True,
+            line_shape='spline'
+        )
+        
+        fig_daily.update_layout(
+            xaxis_title="Fecha",
+            yaxis_title="Número de Iniciativas",
+            hovermode='x unified'
+        )
+        
+        fig_daily.update_traces(
+            line=dict(color='#2d5aa0', width=3),
+            marker=dict(size=8, color='#1f4e79')
+        )
+        
+        st.plotly_chart(fig_daily, use_container_width=True)
+    
+    with col2:
+        # Gráfico acumulativo
+        daily_counts_sorted = daily_counts.sort_values('Fecha')
+        daily_counts_sorted['Acumulado'] = daily_counts_sorted['Cantidad'].cumsum()
+        
+        fig_cumulative = px.area(
+            daily_counts_sorted,
+            x='Fecha',
+            y='Acumulado',
+            title="📈 Iniciativas Acumuladas",
+            line_shape='spline'
+        )
+        
+        fig_cumulative.update_layout(
+            xaxis_title="Fecha",
+            yaxis_title="Total Acumulado",
+            hovermode='x unified'
+        )
+        
+        fig_cumulative.update_traces(
+            fill='tonexty',
+            fillcolor='rgba(45, 90, 160, 0.3)',
+            line=dict(color='#2d5aa0', width=2)
+        )
+        
+        st.plotly_chart(fig_cumulative, use_container_width=True)
+    
+    # Gráfico por semana
+    weekly_counts = df_with_dates.groupby('Semana').size().reset_index()
+    weekly_counts.columns = ['Semana', 'Cantidad']
+    
+    fig_weekly = px.bar(
+        weekly_counts,
+        x='Semana',
+        y='Cantidad',
+        title="📊 Iniciativas por Semana",
+        color='Cantidad',
+        color_continuous_scale='Blues'
+    )
+    
+    fig_weekly.update_layout(
+        xaxis_title="Semana",
+        yaxis_title="Número de Iniciativas",
+        xaxis_tickangle=45
+    )
+    
+    st.plotly_chart(fig_weekly, use_container_width=True)
+    
+    # Análisis por día de la semana y hora
+    col3, col4 = st.columns(2)
+    
+    with col3:
+        # Distribución por día de la semana
+        weekday_counts = df_with_dates['Dia_Semana'].value_counts()
+        
+        # Ordenar días de la semana
+        day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        day_names_es = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+        
+        weekday_ordered = []
+        labels_ordered = []
+        for i, day in enumerate(day_order):
+            if day in weekday_counts.index:
+                weekday_ordered.append(weekday_counts[day])
+                labels_ordered.append(day_names_es[i])
+            else:
+                weekday_ordered.append(0)
+                labels_ordered.append(day_names_es[i])
+        
+        fig_weekday = px.bar(
+            x=labels_ordered,
+            y=weekday_ordered,
+            title="📅 Distribución por Día de la Semana",
+            color=weekday_ordered,
+            color_continuous_scale='Viridis'
+        )
+        
+        fig_weekday.update_layout(
+            xaxis_title="Día de la Semana",
+            yaxis_title="Número de Iniciativas",
+            showlegend=False
+        )
+        
+        st.plotly_chart(fig_weekday, use_container_width=True)
+    
+    with col4:
+        # Distribución por hora del día
+        hour_counts = df_with_dates['Hora'].value_counts().sort_index()
+        
+        fig_hour = px.bar(
+            x=hour_counts.index,
+            y=hour_counts.values,
+            title="🕐 Distribución por Hora del Día",
+            color=hour_counts.values,
+            color_continuous_scale='Sunset'
+        )
+        
+        fig_hour.update_layout(
+            xaxis_title="Hora del Día",
+            yaxis_title="Número de Iniciativas",
+            showlegend=False,
+            xaxis=dict(tickmode='linear', tick0=0, dtick=2)
+        )
+        
+        st.plotly_chart(fig_hour, use_container_width=True)
+    
+    # Estadísticas temporales
+    st.subheader("📊 Estadísticas Temporales")
+    
+    # Calcular estadísticas
+    first_date = df_with_dates['Fecha_Procesada'].min()
+    last_date = df_with_dates['Fecha_Procesada'].max()
+    days_active = (last_date - first_date).days + 1
+    avg_per_day = len(df_with_dates) / days_active if days_active > 0 else 0
+    
+    # Período más activo
+    most_active_day = daily_counts.loc[daily_counts['Cantidad'].idxmax()]
+    
+    col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+    
+    with col_stat1:
+        st.metric(
+            "📅 Primer registro",
+            first_date.strftime('%d/%m/%Y')
+        )
+    
+    with col_stat2:
+        st.metric(
+            "📅 Último registro",
+            last_date.strftime('%d/%m/%Y')
+        )
+    
+    with col_stat3:
+        st.metric(
+            "⏱️ Promedio por día",
+            f"{avg_per_day:.1f}"
+        )
+    
+    with col_stat4:
+        st.metric(
+            "🔥 Día más activo",
+            most_active_day['Fecha'].strftime('%d/%m/%Y'),
+            delta=f"{int(most_active_day['Cantidad'])} iniciativas"
+        )
 
 # ==========================================
 # FUNCIÓN PRINCIPAL DE LA APLICACIÓN
@@ -520,25 +774,35 @@ def login_page():
 def main():
     """Función principal de la aplicación"""
     
-    # Verificar si el usuario está autenticado
-    if "authenticated" not in st.session_state:
-        st.session_state["authenticated"] = False
+    # Verificar sesión
+    check_session()
     
     if not st.session_state["authenticated"]:
         login_page()
         return
     
-    # Header principal
-    st.markdown('''
+    # Header principal con información de usuario
+    username = st.session_state.get("username", "Usuario")
+    st.markdown(f'''
     <div class="main-header">
         <h1>💡 Analizador de Iniciativas de Innovación</h1>
         <p>Sistema de Análisis y Priorización de Propuestas</p>
+        <p style="font-size: 0.9em; opacity: 0.8;">Bienvenido, {username}</p>
     </div>
     ''', unsafe_allow_html=True)
     
-    # Botón de cerrar sesión
-    if st.sidebar.button("Cerrar Sesión"):
+    # Botón de cerrar sesión en la sidebar
+    st.sidebar.markdown(f"👤 **Usuario:** {username}")
+    if st.sidebar.button("🚪 Cerrar Sesión"):
+        # Limpiar todas las variables de sesión relacionadas con autenticación
         st.session_state["authenticated"] = False
+        if "session_time" in st.session_state:
+            del st.session_state["session_time"]
+        if "username" in st.session_state:
+            del st.session_state["username"]
+        if "remember_session" in st.session_state:
+            del st.session_state["remember_session"]
+        st.success("Sesión cerrada exitosamente")
         st.rerun()
     
     # ==========================================
@@ -573,6 +837,8 @@ def main():
     # ==========================================
     
     if df is not None:
+        # Procesar fechas ANTES de limpiar los datos
+        df = process_dates(df)
         df_processed = clean_and_process_data(df)
         
         if df_processed is not None and len(df_processed) > 0:
@@ -604,7 +870,7 @@ def main():
                 unique_processes = sorted(list(set(all_processes)))
                 procesos_selected = st.sidebar.multiselect("Procesos relacionados:", unique_processes, default=unique_processes)
             else:
-                proceso_selected = 'Todos'
+                procesos_selected = []
             
             # Aplicar filtros
             df_filtered = df_processed.copy()
@@ -660,12 +926,13 @@ def main():
             # PESTAÑAS PRINCIPALES
             # ==========================================
             
-            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+            tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
                 "📈 Análisis General", 
                 "🏆 Ranking de Iniciativas", 
                 "📊 Análisis por Área",
                 "🔍 Detalle de Iniciativas",
                 "⚙️ Análisis por Proceso", 
+                "📅 Línea de Tiempo",  # NUEVA PESTAÑA
                 "📋 Reporte Ejecutivo"
             ])
             
@@ -831,7 +1098,101 @@ def main():
                 st.dataframe(area_analysis, use_container_width=True)
             
             # ==========================================
-            # TAB 4: ANÁLISIS POR PROCESO
+            # TAB 4: DETALLE DE INICIATIVAS
+            # ==========================================
+            
+            with tab4:
+                st.subheader("🔍 Detalle de Iniciativas")
+                
+                iniciativas_list = df_filtered['Nombre_Iniciativa'].tolist()
+                
+                if iniciativas_list:
+                    selected_initiative = st.selectbox(
+                        "Selecciona una iniciativa para ver detalles:",
+                        iniciativas_list
+                    )
+                    
+                    # Mostrar detalles
+                    init_data = df_filtered[df_filtered['Nombre_Iniciativa'] == selected_initiative].iloc[0]
+                    
+                    # Aplicar corrección de encoding
+                    nombre_iniciativa = fix_encoding(init_data['Nombre_Iniciativa'])
+                    nombre_colaborador = fix_encoding(init_data['Nombre_Colaborador'])
+                    area = fix_encoding(init_data['Area'])
+                    problema = fix_encoding(str(init_data.get('Problema', 'No especificado')))
+                    propuesta = fix_encoding(str(init_data.get('Propuesta', 'No especificada')))
+                    beneficios = fix_encoding(str(init_data.get('Beneficios', 'No especificados')))
+                    
+                    col1, col2 = st.columns([2, 1])
+                    
+                    with col1:
+                        st.markdown(f"""
+                        ### {nombre_iniciativa}
+                        
+                        **👤 Propuesta por:** {nombre_colaborador}  
+                        **🏢 Área:** {area}  
+                        **⭐ Puntuación Ponderada:** {init_data['Puntuacion_Ponderada']:.2f}/5.0  
+                        **🎯 Prioridad:** {init_data['Prioridad']}
+                        
+                        **📝 Problema que resuelve:**
+                        {problema}
+                        
+                        **💡 Propuesta:**
+                        {propuesta}
+                        
+                        **✅ Beneficios esperados:**
+                        {beneficios}
+                        """)
+                    
+                    with col2:
+                        # Gráfico radar individual
+                        metrics = ['Valor_Estrategico', 'Nivel_Impacto', 'Viabilidad_Tecnica', 
+                                  'Costo_Beneficio', 'Innovacion_Disrupcion', 
+                                  'Escalabilidad_Transversalidad', 'Tiempo_Implementacion']
+                        
+                        values = [init_data[metric] for metric in metrics]
+                        
+                        fig_individual = go.Figure()
+                        fig_individual.add_trace(go.Scatterpolar(
+                            r=values,
+                            theta=['Val. Estratégico', 'Impacto', 'Viabilidad',
+                                   'Costo-Beneficio', 'Innovación', 'Escalabilidad', 'Tiempo'],
+                            fill='toself',
+                            name=selected_initiative,
+                            line=dict(color='#2d5aa0')
+                        ))
+                        
+                        fig_individual.update_layout(
+                            polar=dict(radialaxis=dict(visible=True, range=[0, 5])),
+                            showlegend=False,
+                            title="Perfil de la Iniciativa"
+                        )
+                        
+                        st.plotly_chart(fig_individual, use_container_width=True)
+                    
+                    # Métricas detalladas
+                    st.subheader("📊 Métricas Detalladas")
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Valor Estratégico", f"{init_data['Valor_Estrategico']}/5")
+                        st.metric("Nivel de Impacto", f"{init_data['Nivel_Impacto']}/5")
+                    
+                    with col2:
+                        st.metric("Viabilidad Técnica", f"{init_data['Viabilidad_Tecnica']}/5")
+                        st.metric("Costo-Beneficio", f"{init_data['Costo_Beneficio']}/5")
+                    
+                    with col3:
+                        st.metric("Innovación", f"{init_data['Innovacion_Disrupcion']}/5")
+                        st.metric("Escalabilidad", f"{init_data['Escalabilidad_Transversalidad']}/5")
+                    
+                    with col4:
+                        st.metric("Tiempo Implementación", f"{init_data['Tiempo_Implementacion']}/5")
+                        st.metric("Puntuación Total", f"{init_data['Puntuacion_Total']}/35")
+            
+            # ==========================================
+            # TAB 5: ANÁLISIS POR PROCESO
             # ==========================================
             
             with tab5:
@@ -992,104 +1353,72 @@ def main():
                     st.warning("La columna de procesos no está disponible en los datos actuales.")
             
             # ==========================================
-            # TAB 5: DETALLE DE INICIATIVAS
-            # ==========================================
-            
-            with tab4:
-                st.subheader("🔍 Detalle de Iniciativas")
-                
-                iniciativas_list = df_filtered['Nombre_Iniciativa'].tolist()
-                
-                if iniciativas_list:
-                    selected_initiative = st.selectbox(
-                        "Selecciona una iniciativa para ver detalles:",
-                        iniciativas_list
-                    )
-                    
-                    # Mostrar detalles
-                    init_data = df_filtered[df_filtered['Nombre_Iniciativa'] == selected_initiative].iloc[0]
-                    
-                    # Aplicar corrección de encoding
-                    nombre_iniciativa = fix_encoding(init_data['Nombre_Iniciativa'])
-                    nombre_colaborador = fix_encoding(init_data['Nombre_Colaborador'])
-                    area = fix_encoding(init_data['Area'])
-                    problema = fix_encoding(str(init_data.get('Problema', 'No especificado')))
-                    propuesta = fix_encoding(str(init_data.get('Propuesta', 'No especificada')))
-                    beneficios = fix_encoding(str(init_data.get('Beneficios', 'No especificados')))
-                    
-                    col1, col2 = st.columns([2, 1])
-                    
-                    with col1:
-                        st.markdown(f"""
-                        ### {nombre_iniciativa}
-                        
-                        **👤 Propuesta por:** {nombre_colaborador}  
-                        **🏢 Área:** {area}  
-                        **⭐ Puntuación Ponderada:** {init_data['Puntuacion_Ponderada']:.2f}/5.0  
-                        **🎯 Prioridad:** {init_data['Prioridad']}
-                        
-                        **📝 Problema que resuelve:**
-                        {problema}
-                        
-                        **💡 Propuesta:**
-                        {propuesta}
-                        
-                        **✅ Beneficios esperados:**
-                        {beneficios}
-                        """)
-                    
-                    with col2:
-                        # Gráfico radar individual
-                        metrics = ['Valor_Estrategico', 'Nivel_Impacto', 'Viabilidad_Tecnica', 
-                                  'Costo_Beneficio', 'Innovacion_Disrupcion', 
-                                  'Escalabilidad_Transversalidad', 'Tiempo_Implementacion']
-                        
-                        values = [init_data[metric] for metric in metrics]
-                        
-                        fig_individual = go.Figure()
-                        fig_individual.add_trace(go.Scatterpolar(
-                            r=values,
-                            theta=['Val. Estratégico', 'Impacto', 'Viabilidad',
-                                   'Costo-Beneficio', 'Innovación', 'Escalabilidad', 'Tiempo'],
-                            fill='toself',
-                            name=selected_initiative,
-                            line=dict(color='#2d5aa0')
-                        ))
-                        
-                        fig_individual.update_layout(
-                            polar=dict(radialaxis=dict(visible=True, range=[0, 5])),
-                            showlegend=False,
-                            title="Perfil de la Iniciativa"
-                        )
-                        
-                        st.plotly_chart(fig_individual, use_container_width=True)
-                    
-                    # Métricas detalladas
-                    st.subheader("📊 Métricas Detalladas")
-                    
-                    col1, col2, col3, col4 = st.columns(4)
-                    
-                    with col1:
-                        st.metric("Valor Estratégico", f"{init_data['Valor_Estrategico']}/5")
-                        st.metric("Nivel de Impacto", f"{init_data['Nivel_Impacto']}/5")
-                    
-                    with col2:
-                        st.metric("Viabilidad Técnica", f"{init_data['Viabilidad_Tecnica']}/5")
-                        st.metric("Costo-Beneficio", f"{init_data['Costo_Beneficio']}/5")
-                    
-                    with col3:
-                        st.metric("Innovación", f"{init_data['Innovacion_Disrupcion']}/5")
-                        st.metric("Escalabilidad", f"{init_data['Escalabilidad_Transversalidad']}/5")
-                    
-                    with col4:
-                        st.metric("Tiempo Implementación", f"{init_data['Tiempo_Implementacion']}/5")
-                        st.metric("Puntuación Total", f"{init_data['Puntuacion_Total']}/35")
-            
-            # ==========================================
-            # TAB 6: REPORTE EJECUTIVO
+            # TAB 6: LÍNEA DE TIEMPO
             # ==========================================
             
             with tab6:
+                st.subheader("📅 Línea de Tiempo de Iniciativas")
+                
+                if 'Fecha_Procesada' in df_filtered.columns:
+                    create_timeline_charts(df_filtered)
+                    
+                    # Tabla de iniciativas por fecha
+                    st.subheader("📋 Registro Cronológico")
+                    
+                    if 'Fecha_Procesada' in df_filtered.columns and df_filtered['Fecha_Procesada'].notna().any():
+                        df_timeline = df_filtered[df_filtered['Fecha_Procesada'].notna()].copy()
+                        df_timeline = df_timeline.sort_values('Fecha_Procesada', ascending=False)
+                        
+                        # Crear tabla resumida
+                        timeline_table = df_timeline[['Fecha_Procesada', 'Nombre_Iniciativa', 'Nombre_Colaborador', 
+                                                     'Area', 'Puntuacion_Ponderada', 'Prioridad']].copy()
+                        
+                        timeline_table['Fecha'] = timeline_table['Fecha_Procesada'].dt.strftime('%d/%m/%Y %H:%M')
+                        timeline_table = timeline_table.drop('Fecha_Procesada', axis=1)
+                        
+                        # Aplicar corrección de encoding
+                        for col in ['Nombre_Iniciativa', 'Nombre_Colaborador', 'Area']:
+                            if col in timeline_table.columns:
+                                timeline_table[col] = timeline_table[col].apply(fix_encoding)
+                        
+                        timeline_table['Puntuacion_Ponderada'] = timeline_table['Puntuacion_Ponderada'].round(2)
+                        
+                        # Reordenar columnas
+                        timeline_table = timeline_table[['Fecha', 'Nombre_Iniciativa', 'Nombre_Colaborador', 
+                                                        'Area', 'Puntuacion_Ponderada', 'Prioridad']]
+                        
+                        st.dataframe(
+                            timeline_table,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "Fecha": "📅 Fecha de Registro",
+                                "Nombre_Iniciativa": "💡 Iniciativa",
+                                "Nombre_Colaborador": "👤 Colaborador", 
+                                "Area": "🏢 Área",
+                                "Puntuacion_Ponderada": "⭐ Puntuación",
+                                "Prioridad": "🎯 Prioridad"
+                            }
+                        )
+                        
+                        # Opción de descarga de cronológico
+                        csv_timeline = timeline_table.to_csv(index=False)
+                        st.download_button(
+                            label="⬇️ Descargar Cronológico CSV",
+                            data=csv_timeline,
+                            file_name=f"cronologico_iniciativas_{datetime.now().strftime('%Y%m%d')}.csv",
+                            mime="text/csv"
+                        )
+                    
+                else:
+                    st.warning("No hay información de fechas disponible en los datos actuales.")
+                    st.info("Para ver la línea de tiempo, asegúrate de que los datos incluyan la columna 'Marca temporal' del Google Forms.")
+            
+            # ==========================================
+            # TAB 7: REPORTE EJECUTIVO
+            # ==========================================
+            
+            with tab7:
                 st.subheader("📋 Reporte Ejecutivo")
                 
                 # Botones superiores
@@ -1299,6 +1628,8 @@ def main():
         - 📋 Reportes ejecutivos en PDF
         - 🔍 Análisis detallado por iniciativa
         - 🔧 Corrección automática de caracteres especiales
+        - 📅 Línea de tiempo de iniciativas
+        - 🔐 Sistema de autenticación seguro
         
         ### Criterios de evaluación (escala 0-5):
         - **Valor estratégico (20%):** Contribución a objetivos estratégicos
@@ -1310,11 +1641,13 @@ def main():
         - **Tiempo de implementación (10%):** Velocidad de puesta en marcha
         
         ### Cómo usar:
-        1. **Selecciona fuente de datos** en la barra lateral
-        2. **Explora las 5 pestañas** de análisis disponibles
-        3. **Aplica filtros** por área o prioridad según necesites
-        4. **Genera reportes PDF** para presentaciones ejecutivas
-        5. **Exporta datos** en CSV para análisis adicionales
+        1. **Inicia sesión** con tus credenciales
+        2. **Selecciona fuente de datos** en la barra lateral
+        3. **Explora las 6 pestañas** de análisis disponibles
+        4. **Aplica filtros** por área o prioridad según necesites
+        5. **Analiza la línea de tiempo** para ver patrones temporales
+        6. **Genera reportes PDF** para presentaciones ejecutivas
+        7. **Exporta datos** en CSV para análisis adicionales
         """)
 
     # ==========================================
