@@ -1655,7 +1655,7 @@ def main():
     # ==========================================
     
     st.markdown("---")
-    st.markdown("🚀 **Sistema de Análisis de Iniciativas de Innovación** | Desarrollado para el equipo de Innovación")
+    st.markdown("🚀 **Sistema de Análisis de Iniciativas** | Desarrollado para el equipo de Innovación")
 
 # ==========================================
 # EJECUTAR APLICACIÓN
